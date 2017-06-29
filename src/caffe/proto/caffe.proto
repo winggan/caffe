@@ -308,7 +308,7 @@ message ParamSpec {
 // NOTE
 // Update the next available ID when you add a new LayerParameter field.
 //
-// LayerParameter next available layer-specific ID: 147 (last added: recurrent_param)
+// LayerParameter next available layer-specific ID: 149 (last added: noise_param)
 message LayerParameter {
   optional string name = 1; // the layer name
   optional string type = 2; // the layer type
@@ -361,6 +361,7 @@ message LayerParameter {
   // engine parameter for selecting the implementation.
   // The default for the engine is set by the ENGINE switch at compile-time.
   optional AccuracyParameter accuracy_param = 102;
+  optional AlignImageDataParameter align_image_data_param = 147;
   optional ArgMaxParameter argmax_param = 103;
   optional BatchNormParameter batch_norm_param = 139;
   optional BiasParameter bias_param = 141;
@@ -387,6 +388,7 @@ message LayerParameter {
   optional LRNParameter lrn_param = 118;
   optional MemoryDataParameter memory_data_param = 119;
   optional MVNParameter mvn_param = 120;
+  optional NoiseParameter noise_param = 148;
   optional ParameterParameter parameter_param = 145;
   optional PoolingParameter pooling_param = 121;
   optional PowerParameter power_param = 122;
@@ -1410,3 +1412,78 @@ message PReLUParameter {
   // Whether or not slope parameters are shared across channels.
   optional bool channel_shared = 2 [default = false];
 }
+
+message AlignAugmentationParameter {
+  // Number of points of face alignment
+  optional uint32 num_points = 1 [default = 0];
+  // Whether or not permit mirror
+  optional bool mirror = 2 [default = false];
+  // 1-Based Indecies of points that on the left of the face, REQUIRED if mirror
+  // is permitted, MUST be the same length as that of right
+  repeated uint32 idx_left_points = 3;
+  // 1-Based Indecies of points that on the right of the face, REQUIRED if mirror
+  // is permitted, MUST be the same length as that of left
+  repeated uint32 idx_right_points = 4;
+  // Whether or not permit rotation
+  optional bool rotate = 5 [default = false];
+  // Minimum rotation angle allowed (clock-wise, minus means anti-clock-wise)
+  // in degrees, REQUIRED if rotation is permitted
+  optional float min_rotate = 6 [default = 0];
+  // Maximum rotation angle allowed (clock-wise, minus means anti-clock-wise)
+  // in degrees, REQUIRED if rotation is permitted
+  optional float max_rotate = 7 [default = 0];
+  // The size of the output image, imcompatible with "width" and "height"
+  optional uint32 size = 8 [default = 0];
+  // The width & height of the output image, imcompatible with "size"
+  optional uint32 height = 9 [default = 0];
+  optional uint32 width = 10 [default = 0];
+  // Size variation of random crop box RELATIVE to bounding box of all points
+  // MUST be positive
+  optional float max_crop_size = 11 [default = 1.6];
+  optional float min_crop_size = 12 [default = 1.0];
+  // Whether or not normalize points' coordinate to that when output size is (1,1)
+  optional bool normalize = 13 [default = false];
+  // range of 1-Based index of points that are ignored during determining the bounding box
+  // BOTH are INCLUSIVE
+  optional uint32 ignore_start_inc = 14;
+  optional uint32 ignore_end_inc = 15;
+  // list of 1-Based index of points that are ignored during determining the bounding box
+  repeated uint32 ignore_idx = 16;
+}
+
+message AlignImageDataParameter {
+  // Specify the data source.
+  optional string source = 1;
+  // Specify the batch size.
+  optional uint32 batch_size = 2 [default = 1];
+  // The rand_skip variable is for the data layer to skip a few data points
+  // to avoid all asynchronous sgd clients to start at the same point. The skip
+  // point would be set as rand_skip * rand(0,1). Note that rand_skip should not
+  // be larger than the number of keys in the database.
+  optional uint32 rand_skip = 3 [default = 0];
+  // Whether or not DataLayer should shuffle the list of files at every epoch.
+  optional bool shuffle = 4 [default = false];
+  // Specify if the images are color or gray
+  optional bool is_color = 5 [default = true];
+  optional string root_folder = 6 [default = ""];
+  optional AlignAugmentationParameter augment_param = 7;
+}
+message NoiseParameter {
+  enum NoiseType {
+    // gaussian (normal) noise
+    GAUSSIAN = 0;
+    // uniform noise
+    UNIFORM = 1;
+  }
+  // type of noise
+  optional NoiseType noise_type = 1 [default = GAUSSIAN];
+  // mean of the gaussian noise
+  optional float mean = 2 [default = 0];
+  // standard variance of the gaussian noise
+  optional float std_var = 3 [default = 1];
+  // upper bound of the uniform noise
+  optional float upper = 4 [default = 1];
+  // lower bound of the uniform noise
+  optional float lower = 5 [default = -1];
+}
+
