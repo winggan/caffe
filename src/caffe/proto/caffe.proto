@@ -308,7 +308,7 @@ message ParamSpec {
 // NOTE
 // Update the next available ID when you add a new LayerParameter field.
 //
-// LayerParameter next available layer-specific ID: 149 (last added: noise_param)
+// LayerParameter next available layer-specific ID: 151 (last added: align_data_param)
 message LayerParameter {
   optional string name = 1; // the layer name
   optional string type = 2; // the layer type
@@ -361,6 +361,7 @@ message LayerParameter {
   // engine parameter for selecting the implementation.
   // The default for the engine is set by the ENGINE switch at compile-time.
   optional AccuracyParameter accuracy_param = 102;
+  optional AlignDataParameter align_data_param = 150;
   optional AlignImageDataParameter align_image_data_param = 147;
   optional ArgMaxParameter argmax_param = 103;
   optional BatchNormParameter batch_norm_param = 139;
@@ -397,6 +398,7 @@ message LayerParameter {
   optional RecurrentParameter recurrent_param = 146;
   optional ReductionParameter reduction_param = 136;
   optional ReLUParameter relu_param = 123;
+  optional ReorganizeParameter reorg_param = 149;
   optional ReshapeParameter reshape_param = 133;
   optional ScaleParameter scale_param = 142;
   optional SigmoidParameter sigmoid_param = 124;
