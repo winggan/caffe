@@ -1487,3 +1487,36 @@ message NoiseParameter {
   optional float lower = 5 [default = -1];
 }
 
+message AlignDataParameter {
+  enum DB {
+    LEVELDB = 0;
+    LMDB = 1;
+  }
+  // Specify the data source.
+  optional string source = 1;
+  // Specify the batch size.
+  optional uint32 batch_size = 2 [default = 1];
+  // The rand_skip variable is for the data layer to skip a few data points
+  // to avoid all asynchronous sgd clients to start at the same point. The skip
+  // point would be set as rand_skip * rand(0,1). Note that rand_skip should not
+  // be larger than the number of keys in the database.
+  optional uint32 rand_skip = 3 [default = 0];
+  // Skip {rand() % rand_interval} samples every time fetch {num_solver} samples.
+  optional uint32 rand_interval = 4 [default = false];
+  optional DB backend = 5 [default = LEVELDB];
+  // Prefetch queue (Increase if data feeding bandwidth varies, within the
+  // limit of device memory for GPU training)
+  optional uint32 prefetch = 6 [default = 4];
+  optional AlignAugmentationParameter augment_param = 7;
+}
+
+message ReorganizeParameter {
+  // specify whether flatten (channel increase) the blob or stack (channel decrease)
+  optional bool is_flatten = 1 [default = false];
+  
+  optional uint32 stride = 2 [default = 1];
+  
+  optional uint32 stride_w = 3 [default = 1];
+  
+  optional uint32 stride_h = 4 [default = 1];
+}
