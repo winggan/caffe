@@ -48,10 +48,17 @@ class AlignAugmenter {
 	  */
     
 	void Augment(const cv::Mat &cv_img, const cv::Mat &cv_pts, cv::Mat &aug_cv_img, cv::Mat &aug_cv_pts);
+  
+  cv::Mat Augment(const cv::Mat &cv_pts, cv::Mat &aug_cv_pts, Caffe::RNG *provided_rng = rng_.get());
 	
+  inline int width() {return width_;}
+  inline int height() {return height_;}
+  
   protected:
     virtual int Rand(int n);
+    int Rand(Caffe::RNG *provided_rng, int n);
 	  virtual Dtype getUniformRand(const Dtype &lowerBound, const Dtype &upperBound);
+    Dtype getUniformRand(Caffe::RNG *provided_rng, const Dtype &lowerBound, const Dtype &upperBound);
    /**
     * @brief make first transformation matrix.
     *    Correspond to move center to (0,0) and rotate the specified angle (in degree)
@@ -69,7 +76,7 @@ class AlignAugmenter {
     *    and satisfying given extend range
     */
     cv::Rect generateRandomBoundingRect(const cv::Rect rotatedBoundingRect, 
-        const float &extendBoxMin, const float &extendBoxMax);
+        const float &extendBoxMin, const float &extendBoxMax, Caffe::RNG *provided_rng = rng_.get());
     
    /**
     * @brief make finally transformation matrix (stand alone).
@@ -81,6 +88,7 @@ class AlignAugmenter {
     * @brief handle order of points after MIRROR warping, assuming CV_64F
     */
     void processMirrorPts(cv::Mat &pts, const std::vector<cv::Vec2i> &pairs);
+    void processMirrorPtsf(cv::Mat &pts, const std::vector<cv::Vec2i> &pairs);
     
    /**
     * @brief do points transformation according to given transformation matrix

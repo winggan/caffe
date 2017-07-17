@@ -215,6 +215,47 @@ void AlignAugmenter<Dtype>::Augment(const cv::Mat &cv_img, const cv::Mat &cv_pts
 }
 
 template <typename Dtype>
+cv::Mat AlignAugmenter<Dtype>::Augment(const cv::Mat &cv_pts, 
+    cv::Mat &aug_cv_pts, Caffe::RNG *provided_rng)
+{
+  const bool doMirror = (phase_ == TRAIN) ? param_.mirror() && Rand(provided_rng, 2) : false;
+  
+  double angle = ((phase_ == TRAIN) && param_.rotate()) ? 
+      getUniformRand(provided_rng, param_.min_rotate(), param_.max_rotate()) : 0;
+  double xMin, xMax, yMin, yMax;
+  cv::minMaxLoc(cv_pts.col(0), &xMin, &xMax, NULL, NULL, ptsMask_);
+  cv::minMaxLoc(cv_pts.col(1), &yMin, &yMax, NULL, NULL, ptsMask_);
+  
+  cv::Rect oriBoundBox(floor(xMin), floor(yMin), ceil(xMax-xMin), ceil(yMax - yMin));
+  cv::Rect rotatedBoundBox, randBoundBox;
+  cv::Mat trans1 = makeRotate(oriBoundBox, angle, rotatedBoundBox);
+  randBoundBox = generateRandomBoundingRect(rotatedBoundBox, 
+      param_.min_crop_size(), param_.max_crop_size(), provided_rng);
+  cv::Mat trans2 = makeRandomCropAndResize(randBoundBox, cv::Size(width_, height_));
+  
+  cv::Mat trans;
+  if(doMirror)
+  {
+    cv::Mat transMirror = makeMirror(width_, height_);
+    trans = transMirror * trans2 * trans1;
+  }
+  else
+    trans = trans2 * trans1;
+  trans.convertTo(trans, CV_32F);
+  aug_cv_pts = warpPointMat(cv_pts, trans);
+  
+  if(doMirror)
+    processMirrorPtsf(aug_cv_pts, mirrorPairs_);
+  
+  if(param_.normalize())
+  {
+    aug_cv_pts.col(0) = aug_cv_pts.col(0) * ( static_cast<Dtype>(1) / width_);
+    aug_cv_pts.col(1) = aug_cv_pts.col(1) * ( static_cast<Dtype>(1) / height_);
+  }
+  return trans;
+}
+
+template <typename Dtype>
 cv::Mat AlignAugmenter<Dtype>::makeRotate(const cv::Rect &originBoundBox, 
     double angle, cv::Rect &resBoundBox)
 {
@@ -273,7 +314,7 @@ cv::Mat AlignAugmenter<Dtype>::makeRandomCropAndResize(const cv::Rect &randomBou
 
 template <typename Dtype>
 cv::Rect AlignAugmenter<Dtype>::generateRandomBoundingRect(const cv::Rect rotatedBoundingRect, 
-    const float &extendBoxMin, const float &extendBoxMax)
+    const float &extendBoxMin, const float &extendBoxMax, Caffe::RNG *provided_rng)
 {
   float halfW = rotatedBoundingRect.width / 2.0f;
   float halfH = rotatedBoundingRect.height / 2.0f;
@@ -281,15 +322,15 @@ cv::Rect AlignAugmenter<Dtype>::generateRandomBoundingRect(const cv::Rect rotate
   float half = (halfW > halfH) ? halfW : halfH;
   // then generate random square in the allowed region
   double X = -half * ((phase_ == TRAIN) ? 
-      getUniformRand(extendBoxMin, extendBoxMax) : 0.5 * (extendBoxMin + extendBoxMax));
+      getUniformRand(provided_rng, extendBoxMin, extendBoxMax) : 0.5 * (extendBoxMin + extendBoxMax));
   //fprintf(stderr, "%f in (%f, %f)\n", X, -half * extendBoxMin, -half * extendBoxMax);
   double Y = -half * ((phase_ == TRAIN) ? 
-      getUniformRand(extendBoxMin, extendBoxMax) : 0.5 * (extendBoxMin + extendBoxMax));
+      getUniformRand(provided_rng, extendBoxMin, extendBoxMax) : 0.5 * (extendBoxMin + extendBoxMax));
   double side;
   if(phase_ == TRAIN)
     side = ((X < Y) ? 
-        getUniformRand(half * extendBoxMin, X - Y + half * extendBoxMax) :
-        getUniformRand(X - Y + half * extendBoxMin, half * extendBoxMax))
+        getUniformRand(provided_rng, half * extendBoxMin, X - Y + half * extendBoxMax) :
+        getUniformRand(provided_rng, X - Y + half * extendBoxMin, half * extendBoxMax))
     - X;
   else
     side = half * (extendBoxMin + extendBoxMax);
@@ -341,6 +382,22 @@ void AlignAugmenter<Dtype>::processMirrorPts(cv::Mat &pts, const std::vector<cv:
 }
 
 template <typename Dtype>
+void AlignAugmenter<Dtype>::processMirrorPtsf(cv::Mat &pts, const std::vector<cv::Vec2i> &pairs)
+{
+  for (size_t i = 0; i < pairs.size(); i++)
+  {
+    int a = pairs[i][0];
+    int b = pairs[i][1];
+    float tmp = pts.at<float>(a, 0);
+    pts.at<float>(a, 0) = pts.at<float>(b, 0);
+    pts.at<float>(b, 0) = tmp;
+    tmp = pts.at<float>(a, 1);
+    pts.at<float>(a, 1) = pts.at<float>(b, 1);
+    pts.at<float>(b, 1) = tmp;
+  }
+}
+
+template <typename Dtype>
 cv::Mat AlignAugmenter<Dtype>::warpPointMat(const cv::Mat &ptsMat, const cv::Mat &trans)
 {
   cv::Mat tmp = cv::Mat::ones(ptsMat.rows, 3, ptsMat.type());
@@ -372,10 +429,27 @@ int AlignAugmenter<Dtype>::Rand(int n)
 }
 
 template <typename Dtype>
+int AlignAugmenter<Dtype>::Rand(Caffe::RNG *provided_rng, int n)
+{
+  CHECK(provided_rng);
+  CHECK_GT(n, 0);
+  caffe::rng_t *rng = static_cast<caffe::rng_t*>(provided_rng->generator());
+  return ((*rng)() % n);
+}
+
+template <typename Dtype>
 Dtype AlignAugmenter<Dtype>::getUniformRand(const Dtype &lowerBound, const Dtype &upperBound)
 {
   CHECK(rng_);
   caffe::rng_t *rng = static_cast<caffe::rng_t*>(rng_->generator());
+  return lowerBound + (upperBound - lowerBound) * (Dtype)(*rng)() / (Dtype)(rng->max());
+}
+
+template <typename Dtype>
+Dtype AlignAugmenter<Dtype>::getUniformRand(Caffe::RNG *provided_rng, const Dtype &lowerBound, const Dtype &upperBound)
+{
+  CHECK(provided_rng);
+  caffe::rng_t *rng = static_cast<caffe::rng_t*>(provided_rng->generator());
   return lowerBound + (upperBound - lowerBound) * (Dtype)(*rng)() / (Dtype)(rng->max());
 }
 
