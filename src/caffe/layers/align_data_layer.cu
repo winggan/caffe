@@ -31,7 +31,7 @@ void AlignDataLayer<Dtype>::Forward_gpu(
   AlignBatch* batch = this->prefetch_full_.pop("Data layer prefetch queue empty");
   
   int batch_size = (int)batch->data_.size();
-  batch->data_[0].data().get()->async_gpu_push(picPushStream_);
+  batch->data_[0]->data().get()->async_gpu_push(picPushStream_);
   
   const NppiRect dstROI = { 0, 0, align_augmenter_->width(), align_augmenter_->height() };
   unsigned char **pDst = pWarpDst_.data();
@@ -47,13 +47,13 @@ void AlignDataLayer<Dtype>::Forward_gpu(
     {
       // check current transfer is done and start transfer for the next
       CUDA_CHECK(cudaStreamSynchronize(picPushStream_));
-      batch->data_[i+1].data().get()->async_gpu_push(picPushStream_);
+      batch->data_[i+1]->data().get()->async_gpu_push(picPushStream_);
       
       // perform warpaffine here
       const int w = batch->w_[i], h = batch->h_[i];
       NppiSize srcSize = { w, h };
       NppiRect srcROI = { 0, 0, w, h };
-      const unsigned char *pSrc0 = (const unsigned char *)batch->data_[i].gpu_data();
+      const unsigned char *pSrc0 = (const unsigned char *)batch->data_[i]->gpu_data();
       const unsigned char *pSrc[3] = { pSrc0, pSrc0 + w * h, pSrc0 + 2 * w * h };
       float *transData = (float *)batch->trans_[i].data;
       double transArray[2][3] = {
@@ -81,7 +81,7 @@ void AlignDataLayer<Dtype>::Forward_gpu(
       const int w = batch->w_[i], h = batch->h_[i];
       NppiSize srcSize = { w, h };
       NppiRect srcROI = { 0, 0, w, h };
-      const unsigned char *pSrc0 = (const unsigned char *)batch->data_[i].gpu_data();
+      const unsigned char *pSrc0 = (const unsigned char *)batch->data_[i]->gpu_data();
       const unsigned char *pSrc[3] = { pSrc0, pSrc0 + w * h, pSrc0 + 2 * w * h };
       float *transData = (float *)batch->trans_[i].data;
       double transArray[2][3] = {
@@ -106,13 +106,13 @@ void AlignDataLayer<Dtype>::Forward_gpu(
     {
       // check current transfer is done and start transfer for the next
       CUDA_CHECK(cudaStreamSynchronize(picPushStream_));
-      batch->data_[i+1].data().get()->async_gpu_push(picPushStream_);
+      batch->data_[i+1]->data().get()->async_gpu_push(picPushStream_);
       
       // perform warpaffine here
       const int w = batch->w_[i], h = batch->h_[i];
       NppiSize srcSize = { w, h };
       NppiRect srcROI = { 0, 0, w, h };
-      const unsigned char *pSrc0 = (const unsigned char *)batch->data_[i].gpu_data();
+      const unsigned char *pSrc0 = (const unsigned char *)batch->data_[i]->gpu_data();
       float *transData = (float *)batch->trans_[i].data;
       double transArray[2][3] = {
         {transData[0], transData[1], transData[2]},
@@ -141,7 +141,7 @@ void AlignDataLayer<Dtype>::Forward_gpu(
       const int w = batch->w_[i], h = batch->h_[i];
       NppiSize srcSize = { w, h };
       NppiRect srcROI = { 0, 0, w, h };
-      const unsigned char *pSrc0 = (const unsigned char *)batch->data_[i].gpu_data();
+      const unsigned char *pSrc0 = (const unsigned char *)batch->data_[i]->gpu_data();
       float *transData = (float *)batch->trans_[i].data;
       double transArray[2][3] = {
         {transData[0], transData[1], transData[2]},

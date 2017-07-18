@@ -16,7 +16,7 @@ namespace caffe {
 class AlignBatch {
  public:
   std::vector<int> w_, h_;
-  std::vector<Blob<float> > data_;
+  std::vector< shared_ptr<Blob<float> > > data_;
   std::vector<cv::Mat> trans_;
   Blob<float> pts_;
   Blob<float> label_; 
@@ -59,3 +59,4 @@ class AlignDataLayer : public BaseDataLayer<Dtype>, public InternalThread
 } // namespace caffe
 
 #endif // CAFFE_ALIGN_DATA_LAYER_HPP_
+

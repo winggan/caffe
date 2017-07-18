@@ -69,9 +69,11 @@ class DBLoader : public InternalThread
  
 } // AlignDataInternal 
 
+boost::mutex AlignDataInternal::DBLoader::mapMutex_;
+std::map<const string, shared_ptr<AlignDataInternal::DBLoader> > AlignDataInternal::DBLoader::allLoader_;
 
-
-AlignDataInternal::QueuePair::QueuePair(int size) {
+AlignDataInternal::QueuePair::QueuePair(int size): reading_(NULL), writing_(NULL)
+{
   // Initialize the free queue with requested number of datums
   for (int i = 0; i < size; ++i) {
     free_.push(new Datum());
@@ -371,6 +373,8 @@ void AlignDataLayer<Dtype>::LayerSetUp(
     prefetch_[i]->pts_.Reshape(ptsShape);
     prefetch_[i]->label_.Reshape(labelShape);
     prefetch_[i]->data_.resize(batch_size);
+    for (size_t sample = 0; sample < prefetch_[i]->data_.size(); sample ++)
+      prefetch_[i]->data_[sample].reset(new Blob<float>);
     prefetch_[i]->w_.resize(batch_size);
     prefetch_[i]->h_.resize(batch_size);
     prefetch_[i]->trans_.resize(batch_size);
@@ -403,8 +407,8 @@ static void loadImgIntoAlignBatch(AlignBatch& batch, int sample, const Datum& da
   unsigned int size_in_floats = (size_in_bytes >> 2) + 1;
   std::vector<int> shape(1, size_in_floats);
   // may call cudaMallocHost, which is not reported to be a problem according to base_data_layer.cpp
-  batch.data_[sample].Reshape(shape);
-  memcpy(batch.data_[sample].mutable_cpu_data(), datum.data().c_str(), size_in_bytes);
+  batch.data_[sample]->Reshape(shape);
+  memcpy(batch.data_[sample]->mutable_cpu_data(), datum.data().c_str(), size_in_bytes);
 }
 
 template <typename Dtype>
@@ -468,6 +472,13 @@ void AlignDataLayer<Dtype>::InternalThreadEntry()
     CUDA_CHECK(cudaStreamDestroy(stream));
   }
 #endif
+}
+
+template <typename Dtype>
+void AlignDataLayer<Dtype>::Forward_cpu(
+    const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top)
+{
+  LOG(FATAL) << "NOT Implemented yet";
 }
 
 INSTANTIATE_CLASS(AlignDataLayer);
