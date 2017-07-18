@@ -34,10 +34,10 @@ void AlignDataLayer<Dtype>::Forward_gpu(
   batch->data_[0].data().get()->async_gpu_push(picPushStream_);
   
   const NppiRect dstROI = { 0, 0, align_augmenter_->width(), align_augmenter_->height() };
-  unsigned char *pDst = pWarpDst_.data();
+  unsigned char **pDst = pWarpDst_.data();
   const int dstStep = align_augmenter_->width();
   const int dstCount = expect_channels_ * align_augmenter_->width() * align_augmenter_->height();
-  const Dtype scale = param_.transform_param().scale();
+  const Dtype scale = layer_param_.transform_param().scale();
   Dtype *top0_data = top[0]->mutable_gpu_data();
   
   if (expect_channels_ == 3)
@@ -59,7 +59,7 @@ void AlignDataLayer<Dtype>::Forward_gpu(
       double transArray[2][3] = {
         {transData[0], transData[1], transData[2]},
         {transData[3], transData[4], transData[5]}
-      }
+      };
       caffe_gpu_set(dstCount, 0, pDst[0]); 
       nppiWarpAffine_8u_P3R(
 				pSrc, srcSize, w, srcROI,
@@ -87,7 +87,7 @@ void AlignDataLayer<Dtype>::Forward_gpu(
       double transArray[2][3] = {
         {transData[0], transData[1], transData[2]},
         {transData[3], transData[4], transData[5]}
-      }
+      };
       caffe_gpu_set(dstCount, 0, pDst[0]);
       nppiWarpAffine_8u_P3R(
 				pSrc, srcSize, w, srcROI,
@@ -117,7 +117,7 @@ void AlignDataLayer<Dtype>::Forward_gpu(
       double transArray[2][3] = {
         {transData[0], transData[1], transData[2]},
         {transData[3], transData[4], transData[5]}
-      }
+      };
       caffe_gpu_set(dstCount, 0, pDst[0]); 
       for (int c = 0; c < expect_channels_; c ++)
         nppiWarpAffine_8u_C1R(
@@ -146,7 +146,7 @@ void AlignDataLayer<Dtype>::Forward_gpu(
       double transArray[2][3] = {
         {transData[0], transData[1], transData[2]},
         {transData[3], transData[4], transData[5]}
-      }
+      };
       caffe_gpu_set(dstCount, 0, pDst[0]); 
       for (int c = 0; c < expect_channels_; c ++)
         nppiWarpAffine_8u_C1R(

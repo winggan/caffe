@@ -49,8 +49,10 @@ class AlignAugmenter {
     
 	void Augment(const cv::Mat &cv_img, const cv::Mat &cv_pts, cv::Mat &aug_cv_img, cv::Mat &aug_cv_pts);
   
-  cv::Mat Augment(const cv::Mat &cv_pts, cv::Mat &aug_cv_pts, Caffe::RNG *provided_rng = rng_.get());
-	
+  cv::Mat Augment(const cv::Mat &cv_pts, cv::Mat &aug_cv_pts, Caffe::RNG *provided_rng);
+  inline cv::Mat Augment(const cv::Mat &cv_pts, cv::Mat &aug_cv_pts)
+  { return Augment(cv_pts, aug_cv_pts, rng_.get()); }
+  
   inline int width() {return width_;}
   inline int height() {return height_;}
   
@@ -76,8 +78,11 @@ class AlignAugmenter {
     *    and satisfying given extend range
     */
     cv::Rect generateRandomBoundingRect(const cv::Rect rotatedBoundingRect, 
-        const float &extendBoxMin, const float &extendBoxMax, Caffe::RNG *provided_rng = rng_.get());
-    
+        const float &extendBoxMin, const float &extendBoxMax, Caffe::RNG *provided_rng);
+    inline cv::Rect generateRandomBoundingRect(const cv::Rect rotatedBoundingRect, 
+        const float &extendBoxMin, const float &extendBoxMax)
+    { return generateRandomBoundingRect(rotatedBoundingRect, extendBoxMin, extendBoxMax, rng_.get()); }
+        
    /**
     * @brief make finally transformation matrix (stand alone).
     *    mirror operation
