@@ -46,9 +46,11 @@ class DBLoader : public InternalThread
   
   void InitRand();
   
+  virtual ~DBLoader();
+  
  protected:
   explicit DBLoader(const LayerParameter& param);
-  virtual ~DBLoader();
+  
   void InternalThreadEntry();
   
   virtual int Rand(int n);
@@ -204,7 +206,7 @@ void AlignDataInternal::DBLoader::InternalThreadEntry()
       backend = DataParameter::DB::LEVELDB;
       break;
     case AlignDataParameter::DB::LMDB:
-      backend = DataParameter::DB::LMDB
+      backend = DataParameter::DB::LMDB;
       break;
     default:
       LOG(FATAL) << "unknown database backend";
@@ -244,7 +246,7 @@ AlignDataLayer<Dtype>::AlignDataLayer(const LayerParameter& param)
     prefetch_free_.push(prefetch_[i].get());
   }
   
-  loaderKey_ = DBLoader::buildKey(param);
+  loaderKey_ = AlignDataInternal::DBLoader::buildKey(param);
   
   if (Caffe::mode() == Caffe::GPU) {
     CUDA_CHECK(cudaStreamCreateWithFlags(&picPushStream_, cudaStreamNonBlocking));
@@ -261,7 +263,7 @@ AlignDataLayer<Dtype>::~AlignDataLayer()
 }
 
 template <typename Dtype>
-void BasePrefetchingDataLayer<Dtype>::LayerSetUp(
+void AlignDataLayer<Dtype>::LayerSetUp(
     const vector<Blob<Dtype>*>& bottom, const vector<Blob<Dtype>*>& top)
 {
   align_augmenter_.reset(
@@ -271,9 +273,9 @@ void BasePrefetchingDataLayer<Dtype>::LayerSetUp(
   
   align_augmenter_->InitRand();
   
-  DBLoader& loader = AlignDataInternal::DBLoader::GetOrCreateLoader(loaderKey_, layer_param_);
-  QueuePair& dbQueue = loader.getReadingQueue(Caffe::solver_rank());
-  const int batch_size = layer_param_.align_data_param().batch_size();
+  AlignDataInternal::DBLoader& loader = AlignDataInternal::DBLoader::GetOrCreateLoader(loaderKey_, this->layer_param_);
+  AlignDataInternal::QueuePair& dbQueue = loader.getReadingQueue(Caffe::solver_rank());
+  const int batch_size = this->layer_param_.align_data_param().batch_size();
   
   std::vector<int> topShape(4);
   topShape[0] = batch_size;
@@ -296,8 +298,7 @@ void BasePrefetchingDataLayer<Dtype>::LayerSetUp(
   }
   // init data_mean_, copied from data_transformer.cpp
   {
-    const TransformationParameter& trans_param = param_.transform_param();
-    param
+    const TransformationParameter& trans_param = this->layer_param_.transform_param();
     if (trans_param.has_mean_file()) 
     {
       CHECK_EQ(trans_param.mean_value_size(), 0) <<
@@ -408,9 +409,9 @@ static void loadImgIntoAlignBatch(AlignBatch& batch, int sample, const Datum& da
 template <typename Dtype>
 void AlignDataLayer<Dtype>::load_batch(AlignBatch& batch) 
 {
-  DBLoader& loader = AlignDataInternal::DBLoader::GetOrCreateLoader(loaderKey_, layer_param_);
-  QueuePair& dbQueue = loader.getReadingQueue(Caffe::solver_rank());
-  const int batch_size = layer_param_.align_data_param().batch_size();
+  AlignDataInternal::DBLoader& loader = AlignDataInternal::DBLoader::GetOrCreateLoader(loaderKey_, this->layer_param_);
+  AlignDataInternal::QueuePair& dbQueue = loader.getReadingQueue(Caffe::solver_rank());
+  const int batch_size = this->layer_param_.align_data_param().batch_size();
   const int num_pt = augmentation_param_.num_points();
   
   float *pts_data = batch.pts_.mutable_cpu_data();
