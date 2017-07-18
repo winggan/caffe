@@ -37,7 +37,7 @@ void AlignDataLayer<Dtype>::Forward_gpu(
   unsigned char **pDst = pWarpDst_.data();
   const int dstStep = align_augmenter_->width();
   const int dstCount = expect_channels_ * align_augmenter_->width() * align_augmenter_->height();
-  const Dtype scale = layer_param_.transform_param().scale();
+  const Dtype scale = this->layer_param_.transform_param().scale();
   Dtype *top0_data = top[0]->mutable_gpu_data();
   
   if (expect_channels_ == 3)
@@ -60,11 +60,11 @@ void AlignDataLayer<Dtype>::Forward_gpu(
         {transData[0], transData[1], transData[2]},
         {transData[3], transData[4], transData[5]}
       };
-      caffe_gpu_set(dstCount, 0, pDst[0]); 
+      CUDA_CHECK(cudaMemset(pDst[0], 0, dstCount));
       nppiWarpAffine_8u_P3R(
-				pSrc, srcSize, w, srcROI,
-				pDst, dstStep, dstROI,
-				transArray, NPPI_INTER_LINEAR);
+        pSrc, srcSize, w, srcROI,
+        pDst, dstStep, dstROI,
+        transArray, NPPI_INTER_LINEAR);
       
       // perform transformation here (scale and sub mean)
       align_transform_kernel<<<CAFFE_GET_BLOCKS(dstCount), CAFFE_CUDA_NUM_THREADS>>>(
@@ -88,11 +88,11 @@ void AlignDataLayer<Dtype>::Forward_gpu(
         {transData[0], transData[1], transData[2]},
         {transData[3], transData[4], transData[5]}
       };
-      caffe_gpu_set(dstCount, 0, pDst[0]);
+      CUDA_CHECK(cudaMemset(pDst[0], 0, dstCount));
       nppiWarpAffine_8u_P3R(
-				pSrc, srcSize, w, srcROI,
-				pDst, dstStep, dstROI,
-				transArray, NPPI_INTER_LINEAR);
+        pSrc, srcSize, w, srcROI,
+        pDst, dstStep, dstROI,
+        transArray, NPPI_INTER_LINEAR);
       
       // perform transformation here (scale and sub mean)
       align_transform_kernel<<<CAFFE_GET_BLOCKS(dstCount), CAFFE_CUDA_NUM_THREADS>>>(
@@ -118,7 +118,7 @@ void AlignDataLayer<Dtype>::Forward_gpu(
         {transData[0], transData[1], transData[2]},
         {transData[3], transData[4], transData[5]}
       };
-      caffe_gpu_set(dstCount, 0, pDst[0]); 
+      CUDA_CHECK(cudaMemset(pDst[0], 0, dstCount)); 
       for (int c = 0; c < expect_channels_; c ++)
         nppiWarpAffine_8u_C1R(
           pSrc0 + c * w * h, srcSize, w, srcROI,
@@ -147,7 +147,7 @@ void AlignDataLayer<Dtype>::Forward_gpu(
         {transData[0], transData[1], transData[2]},
         {transData[3], transData[4], transData[5]}
       };
-      caffe_gpu_set(dstCount, 0, pDst[0]); 
+      CUDA_CHECK(cudaMemset(pDst[0], 0, dstCount));
       for (int c = 0; c < expect_channels_; c ++)
         nppiWarpAffine_8u_C1R(
           pSrc0 + c * w * h, srcSize, w, srcROI,
