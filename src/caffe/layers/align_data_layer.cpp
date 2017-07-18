@@ -470,6 +470,9 @@ void AlignDataLayer<Dtype>::InternalThreadEntry()
 #endif
 }
 
+INSTANTIATE_CLASS(AlignDataLayer);
+REGISTER_LAYER_CLASS(AlignData);
+
 } // namespace caffe
 
 #endif // USE_OPENCV
