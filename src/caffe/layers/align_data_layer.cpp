@@ -1,5 +1,7 @@
 #ifdef USE_OPENCV
 #include "caffe/layers/align_data_layer.hpp"
+#include "caffe/util/rng.hpp"
+#include "caffe/util/db.hpp"
 #include <map>
 #include <string>
 #include <boost/thread.hpp>
@@ -21,7 +23,7 @@ class QueuePair {
   inline void finishWriting();
   
  private: 
-  datam* reading_ = NULL, writing_ = NULL;
+  Datum* reading_ = NULL, *writing_ = NULL;
  
   BlockingQueue<Datum*> free_;
   BlockingQueue<Datum*> full_;
@@ -35,7 +37,7 @@ class DBLoader : public InternalThread
  public: 
   static DBLoader &GetOrCreateLoader(const string &key,const LayerParameter& param);
   inline static std::string buildKey(const LayerParameter& param)
-  { return param.name() + (param.phase() == TRAIN ? "1" : "0") + param.align_data_param().source; }
+  { return param.name() + (param.phase() == TRAIN ? "1" : "0") + param.align_data_param().source(); }
   inline QueuePair& getReadingQueue(unsigned int id)
   { 
     CHECK_LT(id, readingQueues_.size()) << "No readingQueue[" << id << "]";
@@ -162,8 +164,7 @@ AlignDataInternal::DBLoader& AlignDataInternal::DBLoader::GetOrCreateLoader(cons
 {
   {
     boost::mutex::scoped_lock lock(mapMutex_);
-    if (std::map<const string, shared_ptr<DBLoader> >::end 
-      == allLoader_.find(key))
+    if (allLoader_.end() == allLoader_.find(key))
     {
       allLoader_[key] = shared_ptr<DBLoader>(new DBLoader(param));
     }
@@ -171,7 +172,7 @@ AlignDataInternal::DBLoader& AlignDataInternal::DBLoader::GetOrCreateLoader(cons
   return *(allLoader_[key]);
 }
 
-void static read_one(db::Cursor* cursor, QueuePair* qp)
+void static read_one(db::Cursor* cursor, AlignDataInternal::QueuePair* qp)
 {
   Datum& datum = qp->startWriting();
   datum.ParseFromString(cursor->value());
@@ -196,7 +197,19 @@ void static skip_one(db::Cursor* cursor)
 
 void AlignDataInternal::DBLoader::InternalThreadEntry()
 {
-  shared_ptr<db::DB> db(db::GetDB(param_.align_data_param().backend()));
+  DataParameter::DB backend;
+  switch(param_.align_data_param().backend())
+  {
+    case AlignDataParameter::DB::LEVELDB:
+      backend = DataParameter::DB::LEVELDB;
+      break;
+    case AlignDataParameter::DB::LMDB:
+      backend = DataParameter::DB::LMDB
+      break;
+    default:
+      LOG(FATAL) << "unknown database backend";
+  }
+  shared_ptr<db::DB> db(db::GetDB( backend ));
   db->Open(param_.align_data_param().source(), db::READ);
   shared_ptr<db::Cursor> cursor(db->NewCursor());
   
@@ -222,8 +235,8 @@ void AlignDataInternal::DBLoader::InternalThreadEntry()
 template <typename Dtype>
 AlignDataLayer<Dtype>::AlignDataLayer(const LayerParameter& param)
     : BaseDataLayer<Dtype>(param),
-      augmentation_param_(param.align_data_layer().augment_param())
-      prefetch_(aram.align_data_layer().prefetch())
+      augmentation_param_(param.align_data_param().augment_param()),
+      prefetch_(param.align_data_param().prefetch())
 {
   for (size_t i = 0; i < prefetch_.size(); i ++)
   {
