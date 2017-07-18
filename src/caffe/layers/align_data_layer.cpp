@@ -290,7 +290,7 @@ void AlignDataLayer<Dtype>::LayerSetUp(
   // init warpBuffer_ and destination ptr for warpaffine in GPU
   {
     int buffer_in_bytes = expect_channels_ * align_augmenter_->height() * align_augmenter_->width();
-    int buffer_in_floats = (buffer_in_floats >> 2) + 1;
+    int buffer_in_floats = (buffer_in_bytes >> 2) + 1;
     warpBuffer_.Reshape(std::vector<int>(1, buffer_in_floats));
     pWarpDst_.resize(expect_channels_);
     unsigned char *start = (unsigned char *)warpBuffer_.mutable_gpu_data();
@@ -346,7 +346,7 @@ void AlignDataLayer<Dtype>::LayerSetUp(
       data_mean_shape[3] = align_augmenter_->width();
       data_mean_.Reshape(data_mean_shape);
       Dtype *data_mean_data = data_mean_.mutable_cpu_data();
-      caffe_set(data_mean_.count(), 0, data_mean_data);
+      caffe_set<Dtype>(data_mean_.count(), 0, data_mean_data);
     }
 #ifndef CPU_ONLY
     data_mean_.gpu_data();
