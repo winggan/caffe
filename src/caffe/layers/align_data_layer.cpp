@@ -2,6 +2,7 @@
 #include "caffe/layers/align_data_layer.hpp"
 #include "caffe/util/rng.hpp"
 #include "caffe/util/db.hpp"
+#include "caffe/util/io.hpp"
 #include <map>
 #include <string>
 #include <boost/thread.hpp>
@@ -202,11 +203,11 @@ void AlignDataInternal::DBLoader::InternalThreadEntry()
   DataParameter::DB backend;
   switch(param_.align_data_param().backend())
   {
-    case AlignDataParameter::DB::LEVELDB:
-      backend = DataParameter::DB::LEVELDB;
+    case AlignDataParameter::LEVELDB:
+      backend = DataParameter::LEVELDB;
       break;
-    case AlignDataParameter::DB::LMDB:
-      backend = DataParameter::DB::LMDB;
+    case AlignDataParameter::LMDB:
+      backend = DataParameter::LMDB;
       break;
     default:
       LOG(FATAL) << "unknown database backend";
@@ -292,7 +293,7 @@ void AlignDataLayer<Dtype>::LayerSetUp(
     int buffer_in_floats = (buffer_in_floats >> 2) + 1;
     warpBuffer_.Reshape(std::vector<int>(1, buffer_in_floats));
     pWarpDst_.resize(expect_channels_);
-    unsigned char *start = (unsigned char *)pWarpDst_.mutable_gpu_data();
+    unsigned char *start = (unsigned char *)warpBuffer_.mutable_gpu_data();
     for (int i = 0; i < expect_channels_; i ++)
       pWarpDst_[i] = start + i * align_augmenter_->height() * align_augmenter_->width();
   }
