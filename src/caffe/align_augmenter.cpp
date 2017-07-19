@@ -402,7 +402,7 @@ cv::Mat AlignAugmenter<Dtype>::warpPointMat(const cv::Mat &ptsMat, const cv::Mat
 {
   cv::Mat tmp = cv::Mat::ones(ptsMat.rows, 3, ptsMat.type());
 	ptsMat.copyTo(tmp(cv::Rect(0, 0, 2, ptsMat.rows)));
-	return tmp * trans.t();
+  return tmp * trans.rowRange(0, 2).t();
 }
 
 template <typename Dtype>
