@@ -141,7 +141,7 @@ AlignDataInternal::DBLoader::DBLoader(const LayerParameter& param)
     readingQueues_[i].reset(new QueuePair(preload_length));
   
   interval_ = param.phase() == TRAIN ? param.align_data_param().rand_interval() + 1 : 1;
-  
+  InitRand(); 
   StartInternalThread();
 }
 
@@ -220,7 +220,7 @@ void AlignDataInternal::DBLoader::InternalThreadEntry()
   
   try
   {
-    int rand_skip = Rand(param_.align_data_param().rand_skip());
+    int rand_skip = Rand(param_.align_data_param().rand_skip() + 1);
     for (int i = 0; i < rand_skip; i ++)
       skip_one(cursor.get());
     while (!must_stop())
