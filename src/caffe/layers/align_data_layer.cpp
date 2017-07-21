@@ -107,7 +107,7 @@ Datum& AlignDataInternal::QueuePair::startWriting()
 {
   // explicit check finishing last write
   finishWriting();
-  writing_ = free_.pop("buffer full");
+  writing_ = free_.pop(""); // may be to noisy
   return *writing_;
 }
 
