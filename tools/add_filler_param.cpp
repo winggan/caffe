@@ -6,6 +6,7 @@ using std::string;
 #include <glog/logging.h>
 #include <map>
 #include <cmath>
+#include <cstdio>
 
 static void resnet_conv_mod(caffe::NetParameter &net)
 {
