@@ -264,6 +264,11 @@ int main(int argc, char **argv)
     //LOG(INFO) << "pts.size " << pts.rows << ", " << pts.cols;
     scale_down(img, pts, param, processed_img, processed_pts);
     caffe::Datum msg;
+    if (processed_img.empty())
+    {
+      LOG(INFO) << "Invalid input image or pts at line: " << line;
+      continue;
+    }
     align_data_2_datum(processed_img, processed_pts, param.is_color ? 3 : 1, label, msg);
     lmdb.put(i, msg);
     if (i % commit_size == 0)

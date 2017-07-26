@@ -3,6 +3,7 @@
 #include <opencv2/highgui/highgui.hpp>
 
 #include "caffe/util/align_data_2_lmdb.h"
+#define EPSILON 0.001
 
 namespace caffe
 {
@@ -41,7 +42,8 @@ int scale_down(const cv::Mat &src_img, const cv::Mat &src_pts, const scale_down_
     double xMin, xMax, yMin, yMax;
     cv::minMaxIdx(src_pts.col(0), &xMin, &xMax, NULL, NULL, actualMask);
     cv::minMaxIdx(src_pts.col(1), &yMin, &yMax, NULL, NULL, actualMask);
-
+    if (xMax - xMin < EPSILON || yMax - yMin < EPSILON)
+      return -2;
     halfSize = 0.5 * ((yMax - yMin > xMax - xMin) ? yMax - yMin : xMax - xMin);
     cx = 0.5 * (xMax + xMin);
     cy = 0.5 * (yMax + yMin);
