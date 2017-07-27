@@ -3,7 +3,12 @@
 #include "caffe/layers/align_data_layer.hpp"
 #include <nppi.h>
 
-
+#define NPP_CHECK(condition) \
+  do { \
+    NppStatus status = condition; \
+    CHECK_EQ(status, NPP_NO_ERROR) << " " \
+      << "npp error code = " << status; \
+  } while (0)
 
 namespace caffe {
   
@@ -61,15 +66,16 @@ void AlignDataLayer<Dtype>::Forward_gpu(
         {transData[3], transData[4], transData[5]}
       };
       CUDA_CHECK(cudaMemset(pDst[0], 0, dstCount));
-      nppiWarpAffine_8u_P3R(
+      NPP_CHECK( nppiWarpAffine_8u_P3R(
         pSrc, srcSize, w, srcROI,
         pDst, dstStep, dstROI,
-        transArray, NPPI_INTER_LINEAR);
-      
+        transArray, NPPI_INTER_LINEAR)
+      );
       // perform transformation here (scale and sub mean)
       align_transform_kernel<<<CAFFE_GET_BLOCKS(dstCount), CAFFE_CUDA_NUM_THREADS>>>(
         dstCount, pDst[0], data_mean_.gpu_data(), scale, top0_data + i * dstCount
       );
+      CUDA_POST_KERNEL_CHECK;
     }
     {
       int i = batch_size - 1;
@@ -89,15 +95,16 @@ void AlignDataLayer<Dtype>::Forward_gpu(
         {transData[3], transData[4], transData[5]}
       };
       CUDA_CHECK(cudaMemset(pDst[0], 0, dstCount));
-      nppiWarpAffine_8u_P3R(
+      NPP_CHECK( nppiWarpAffine_8u_P3R(
         pSrc, srcSize, w, srcROI,
         pDst, dstStep, dstROI,
-        transArray, NPPI_INTER_LINEAR);
-      
+        transArray, NPPI_INTER_LINEAR)
+      );
       // perform transformation here (scale and sub mean)
       align_transform_kernel<<<CAFFE_GET_BLOCKS(dstCount), CAFFE_CUDA_NUM_THREADS>>>(
         dstCount, pDst[0], data_mean_.gpu_data(), scale, top0_data + i * dstCount
       );
+      CUDA_POST_KERNEL_CHECK;
     }
   }
   else
@@ -120,16 +127,17 @@ void AlignDataLayer<Dtype>::Forward_gpu(
       };
       CUDA_CHECK(cudaMemset(pDst[0], 0, dstCount)); 
       for (int c = 0; c < expect_channels_; c ++)
-        nppiWarpAffine_8u_C1R(
+        NPP_CHECK( nppiWarpAffine_8u_C1R(
           pSrc0 + c * w * h, srcSize, w, srcROI,
           pDst[c], dstStep, dstROI,
           transArray, NPPI_INTER_LINEAR
-        );
+        ) );
       
       // perform transformation here (scale and sub mean)
       align_transform_kernel<<<CAFFE_GET_BLOCKS(dstCount), CAFFE_CUDA_NUM_THREADS>>>(
         dstCount, pDst[0], data_mean_.gpu_data(), scale, top0_data + i * dstCount
       );
+      CUDA_POST_KERNEL_CHECK;
     }
     {
       int i = batch_size - 1;
@@ -149,16 +157,17 @@ void AlignDataLayer<Dtype>::Forward_gpu(
       };
       CUDA_CHECK(cudaMemset(pDst[0], 0, dstCount));
       for (int c = 0; c < expect_channels_; c ++)
-        nppiWarpAffine_8u_C1R(
+        NPP_CHECK( nppiWarpAffine_8u_C1R(
           pSrc0 + c * w * h, srcSize, w, srcROI,
           pDst[c], dstStep, dstROI,
           transArray, NPPI_INTER_LINEAR
-        );
+        ) );
       
       // perform transformation here (scale and sub mean)
       align_transform_kernel<<<CAFFE_GET_BLOCKS(dstCount), CAFFE_CUDA_NUM_THREADS>>>(
         dstCount, pDst[0], data_mean_.gpu_data(), scale, top0_data + i * dstCount
       );
+      CUDA_POST_KERNEL_CHECK;
     }
   }
    
@@ -166,9 +175,11 @@ void AlignDataLayer<Dtype>::Forward_gpu(
   align_float2dtype_kernel<<<CAFFE_GET_BLOCKS(batch->pts_.count()), CAFFE_CUDA_NUM_THREADS>>>(
     batch->pts_.count(), batch->pts_.gpu_data(), top[1]->mutable_gpu_data()
   );
+  CUDA_POST_KERNEL_CHECK;
   align_float2dtype_kernel<<<CAFFE_GET_BLOCKS(batch->pts_.count()), CAFFE_CUDA_NUM_THREADS>>>(
     batch->label_.count(), batch->label_.gpu_data(), top[2]->mutable_gpu_data()
   );
+  CUDA_POST_KERNEL_CHECK;
   // Ensure the copy is synchronous wrt the host, so that the next batch isn't
   // copied in meanwhile.
   CUDA_CHECK(cudaStreamSynchronize(cudaStreamDefault));
