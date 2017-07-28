@@ -5,7 +5,8 @@
 
 namespace caffe {
 
-const float kBNLL_THRESHOLD = 50.;
+//const float kBNLL_THRESHOLD = 50.; // host variable cannot be directly accessed in kernel function
+#define kBNLL_THRESHOLD 50.
 
 template <typename Dtype>
 __global__ void BNLLForward(const int n, const Dtype* in, Dtype* out) {
