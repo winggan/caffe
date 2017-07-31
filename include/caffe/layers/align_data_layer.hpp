@@ -32,6 +32,9 @@ class AlignDataLayer : public BaseDataLayer<Dtype>, public InternalThread
   virtual void LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top);
 
+  virtual inline const char* type() const { return "AlignData"; }
+  virtual inline int ExactNumBottomBlobs() const { return 0; }
+ 
   virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top);
   virtual void Forward_gpu(const vector<Blob<Dtype>*>& bottom,
