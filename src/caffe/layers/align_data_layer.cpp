@@ -300,13 +300,12 @@ void AlignDataLayer<Dtype>::LayerSetUp(
       pWarpDst_[i] = start + i * align_augmenter_->height() * align_augmenter_->width();
 
 #if ALING_DATA_USE_REMAP
-    std::vector mapShape;
+    std::vector<int> mapShape;
     mapShape.push_back(2);
     mapShape.push_back(align_augmenter_->height());
     mapShape.push_back(align_augmenter_->width());
     xyMap_.Reshape(mapShape);
-    xMap_ = xyMap_.mutable_gpu_data(); // explicit allocate gpu memory
-    yMap_ = xMap_ + align_augmenter_->height() * align_augmenter_->width();
+    xyMap_.mutable_gpu_data(); // explicit allocate gpu memory
 #endif // ALING_DATA_USE_REMAP
   }
   // init data_mean_, copied from data_transformer.cpp

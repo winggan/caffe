@@ -13,11 +13,92 @@
 namespace caffe {
   
 #if ALING_DATA_USE_REMAP
-__global__ void calculate_map_kernel(const int height, const int width, const float *M, float *x, float *y)
-{
-  
-  
+
+#define NUM_TH_2D 32
+inline static int GET_BLOCKS_2D(const int N) {
+  return (N + NUM_TH_2D - 1) / NUM_TH_2D;
 }
+
+__global__ void calculate_map_kernel(const int height, const int width, const float *M, float *xMap, float *yMap)
+{
+  for (int y = blockIdx.y * blockDim.y + threadIdx.y; y < height; y += blockDim.y * gridDim.y)
+    for (int x = blockIdx.x * blockDim.x + threadIdx.x; x < width; x += blockDim.x * gridDim.x)
+    {
+      xMap[x + y * width] = (float)x * M[0] + (float)y * M[1] + M[2];
+      yMap[x + y * width] = (float)x * M[3] + (float)y * M[4] + M[5];
+    }
+}
+
+void static my_warp_affine_P3R(const Npp8u * pSrc[3], NppiSize oSrcSize, int nSrcStep, NppiRect oSrcROI,
+                                     Npp8u * pDst[3], int nDstStep, NppiRect oDstROI,
+                               const double aCoeffs[2][3], int eInterpolation, float *xMap, float *yMap)
+{
+  float M[6]; 
+  { // inverse the transform matrix
+    M[0] = (float)aCoeffs[0][0];
+    M[1] = (float)aCoeffs[0][1];
+    M[2] = (float)aCoeffs[0][2];
+    M[3] = (float)aCoeffs[1][0];
+    M[4] = (float)aCoeffs[1][1];
+    M[5] = (float)aCoeffs[1][2];
+    {
+      float D = M[0] * M[4] - M[1] * M[3];
+      D = D != 0 ? 1.f / D : 0;
+      float A11 = M[4] * D, A22 = M[0] * D;
+      M[0] = A11; M[1] *= -D;
+      M[3] *= -D; M[4] = A22;
+      float b1 = -M[0] * M[2] - M[1] * M[5];
+      float b2 = -M[3] * M[2] - M[4] * M[5];
+      M[2] = b1; M[5] = b2;
+    }
+  }
+  dim3 num_thread(NUM_TH_2D, NUM_TH_2D);
+  dim3 num_block(GET_BLOCKS_2D(oDstROI.width), GET_BLOCKS_2D(oDstROI.height));
+  calculate_map_kernel<<<num_block, num_thread>>>(oDstROI.height, oDstROI.width, M, xMap, yMap);
+  CUDA_POST_KERNEL_CHECK;
+  const NppiSize oDstSizeROI = { oDstROI.width , oDstROI.height };
+  NPP_CHECK(nppiRemap_8u_P3R(
+    pSrc, oSrcSize, nSrcStep, oSrcROI,
+    xMap, oDstROI.width, yMap, oDstROI.width,
+    pDst, nDstStep, oDstSizeROI, eInterpolation)
+  );
+}
+
+void static my_warp_affine_C1R(const Npp8u * pSrc, NppiSize oSrcSize, int nSrcStep, NppiRect oSrcROI,
+                                     Npp8u * pDst, int nDstStep, NppiRect oDstROI,
+                               const double aCoeffs[2][3], int eInterpolation, float *xMap, float *yMap)
+{
+  float M[6];
+  { // inverse the transform matrix
+    M[0] = (float)aCoeffs[0][0];
+    M[1] = (float)aCoeffs[0][1];
+    M[2] = (float)aCoeffs[0][2];
+    M[3] = (float)aCoeffs[1][0];
+    M[4] = (float)aCoeffs[1][1];
+    M[5] = (float)aCoeffs[1][2];
+    {
+      float D = M[0] * M[4] - M[1] * M[3];
+      D = D != 0 ? 1.f / D : 0;
+      float A11 = M[4] * D, A22 = M[0] * D;
+      M[0] = A11; M[1] *= -D;
+      M[3] *= -D; M[4] = A22;
+      float b1 = -M[0] * M[2] - M[1] * M[5];
+      float b2 = -M[3] * M[2] - M[4] * M[5];
+      M[2] = b1; M[5] = b2;
+    }
+  }
+  dim3 num_thread(NUM_TH_2D, NUM_TH_2D);
+  dim3 num_block(GET_BLOCKS_2D(oDstROI.width), GET_BLOCKS_2D(oDstROI.height));
+  calculate_map_kernel<<<num_block, num_thread >>>(oDstROI.height, oDstROI.width, M, xMap, yMap);
+  CUDA_POST_KERNEL_CHECK;
+  const NppiSize oDstSizeROI = { oDstROI.width , oDstROI.height };
+  NPP_CHECK(nppiRemap_8u_C1R(
+    pSrc, oSrcSize, nSrcStep, oSrcROI,
+    xMap, oDstROI.width, yMap, oDstROI.width,
+    pDst, nDstStep, oDstSizeROI, eInterpolation)
+  );
+}
+
 #endif // ALING_DATA_USE_REMAP
   
 template <typename Dtype>
@@ -53,6 +134,11 @@ void AlignDataLayer<Dtype>::Forward_gpu(
   const Dtype scale = this->layer_param_.transform_param().scale();
   Dtype *top0_data = top[0]->mutable_gpu_data();
   
+#if ALING_DATA_USE_REMAP
+  float *xMap = this->xyMap_.mutable_gpu_data();
+  float *yMap = xMap + dstROI.height * dstROI.width;
+#endif // ALING_DATA_USE_REMAP
+
   if (expect_channels_ == 3)
   {
     
@@ -74,11 +160,19 @@ void AlignDataLayer<Dtype>::Forward_gpu(
         {transData[3], transData[4], transData[5]}
       };
       CUDA_CHECK(cudaMemset(pDst[0], 0, dstCount));
+#if ALING_DATA_USE_REMAP
+      my_warp_affine_P3R(
+        pSrc, srcSize, w, srcROI,
+        pDst, dstStep, dstROI,
+        transArray, NPPI_INTER_LINEAR, xMap, yMap
+      );
+#else // ALING_DATA_USE_REMAP
       NPP_CHECK( nppiWarpAffine_8u_P3R(
         pSrc, srcSize, w, srcROI,
         pDst, dstStep, dstROI,
         transArray, NPPI_INTER_LINEAR)
       );
+#endif // ALING_DATA_USE_REMAP
       // perform transformation here (scale and sub mean)
       align_transform_kernel<<<CAFFE_GET_BLOCKS(dstCount), CAFFE_CUDA_NUM_THREADS>>>(
         dstCount, pDst[0], data_mean_.gpu_data(), scale, top0_data + i * dstCount
@@ -103,11 +197,19 @@ void AlignDataLayer<Dtype>::Forward_gpu(
         {transData[3], transData[4], transData[5]}
       };
       CUDA_CHECK(cudaMemset(pDst[0], 0, dstCount));
+#if ALING_DATA_USE_REMAP
+      my_warp_affine_P3R(
+        pSrc, srcSize, w, srcROI,
+        pDst, dstStep, dstROI,
+        transArray, NPPI_INTER_LINEAR, xMap, yMap
+      );
+#else // ALING_DATA_USE_REMAP
       NPP_CHECK( nppiWarpAffine_8u_P3R(
         pSrc, srcSize, w, srcROI,
         pDst, dstStep, dstROI,
         transArray, NPPI_INTER_LINEAR)
       );
+#endif // ALING_DATA_USE_REMAP
       // perform transformation here (scale and sub mean)
       align_transform_kernel<<<CAFFE_GET_BLOCKS(dstCount), CAFFE_CUDA_NUM_THREADS>>>(
         dstCount, pDst[0], data_mean_.gpu_data(), scale, top0_data + i * dstCount
@@ -134,13 +236,20 @@ void AlignDataLayer<Dtype>::Forward_gpu(
         {transData[3], transData[4], transData[5]}
       };
       CUDA_CHECK(cudaMemset(pDst[0], 0, dstCount)); 
-      for (int c = 0; c < expect_channels_; c ++)
+      for (int c = 0; c < expect_channels_; c++)
+#if ALING_DATA_USE_REMAP
+        my_warp_affine_C1R(
+          pSrc0 + c * w * h, srcSize, w, srcROI,
+          pDst[c], dstStep, dstROI,
+          transArray, NPPI_INTER_LINEAR, xMap, yMap
+        );
+#else // ALING_DATA_USE_REMAP
         NPP_CHECK( nppiWarpAffine_8u_C1R(
           pSrc0 + c * w * h, srcSize, w, srcROI,
           pDst[c], dstStep, dstROI,
           transArray, NPPI_INTER_LINEAR
         ) );
-      
+#endif // ALING_DATA_USE_REMAP 
       // perform transformation here (scale and sub mean)
       align_transform_kernel<<<CAFFE_GET_BLOCKS(dstCount), CAFFE_CUDA_NUM_THREADS>>>(
         dstCount, pDst[0], data_mean_.gpu_data(), scale, top0_data + i * dstCount
@@ -164,13 +273,20 @@ void AlignDataLayer<Dtype>::Forward_gpu(
         {transData[3], transData[4], transData[5]}
       };
       CUDA_CHECK(cudaMemset(pDst[0], 0, dstCount));
-      for (int c = 0; c < expect_channels_; c ++)
+      for (int c = 0; c < expect_channels_; c++)
+#if ALING_DATA_USE_REMAP
+        my_warp_affine_C1R(
+          pSrc0 + c * w * h, srcSize, w, srcROI,
+          pDst[c], dstStep, dstROI,
+          transArray, NPPI_INTER_LINEAR, xMap, yMap
+        );
+#else // ALING_DATA_USE_REMAP
         NPP_CHECK( nppiWarpAffine_8u_C1R(
           pSrc0 + c * w * h, srcSize, w, srcROI,
           pDst[c], dstStep, dstROI,
           transArray, NPPI_INTER_LINEAR
         ) );
-      
+#endif // ALING_DATA_USE_REMAP
       // perform transformation here (scale and sub mean)
       align_transform_kernel<<<CAFFE_GET_BLOCKS(dstCount), CAFFE_CUDA_NUM_THREADS>>>(
         dstCount, pDst[0], data_mean_.gpu_data(), scale, top0_data + i * dstCount
