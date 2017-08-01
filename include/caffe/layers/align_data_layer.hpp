@@ -11,6 +11,12 @@
 #include "caffe/util/blocking_queue.hpp"
 #include "caffe/align_augmenter.hpp"
 
+#if (CUDART_VERSION <= 7050) // if cuda is version 7.5 or older
+#define ALING_DATA_USE_REMAP 1
+#else
+#define ALING_DATA_USE_REMAP 0
+#endif
+
 namespace caffe {
 
 class AlignBatch {
@@ -55,6 +61,12 @@ class AlignDataLayer : public BaseDataLayer<Dtype>, public InternalThread
   Blob<float> warpBuffer_;
   Blob<Dtype> data_mean_;
   std::vector<unsigned char *> pWarpDst_;
+  
+#if ALING_DATA_USE_REMAP
+  Blob<float> xyMap_; // 2 x height x width
+  float* xMap_;
+  float* yMap_;
+#endif // ALING_DATA_USE_REMAP
   
   cudaStream_t picPushStream_;
 }; // AlignDataLayer

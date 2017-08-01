@@ -9,8 +9,16 @@
     CHECK_EQ(status, NPP_NO_ERROR) << " " \
       << "npp error code = " << status; \
   } while (0)
-
+    
 namespace caffe {
+  
+#if ALING_DATA_USE_REMAP
+__global__ void calculate_map_kernel(const int height, const int width, const float *M, float *x, float *y)
+{
+  
+  
+}
+#endif // ALING_DATA_USE_REMAP
   
 template <typename Dtype>
 __global__ void align_transform_kernel(const int n, const unsigned char *src, const Dtype* data_mean, 
