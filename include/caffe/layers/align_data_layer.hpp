@@ -11,11 +11,11 @@
 #include "caffe/util/blocking_queue.hpp"
 #include "caffe/align_augmenter.hpp"
 
-//#if (CUDART_VERSION <= 7050) // if cuda is version 7.5 or older
+#if (CUDART_VERSION <= 7050) // if cuda is version 7.5 or older
 #define ALING_DATA_USE_REMAP 1
-//#else
-//#define ALING_DATA_USE_REMAP 0
-//#endif
+#else
+#define ALING_DATA_USE_REMAP 0
+#endif
 
 namespace caffe {
 
