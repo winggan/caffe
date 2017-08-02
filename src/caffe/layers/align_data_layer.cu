@@ -3,6 +3,7 @@
 #include "caffe/layers/align_data_layer.hpp"
 #include <nppi.h>
 
+
 #define NPP_CHECK(condition) \
   do { \
     NppStatus status = condition; \
@@ -14,18 +15,20 @@ namespace caffe {
   
 #if ALING_DATA_USE_REMAP
 
-#define NUM_TH_2D 32
+#define NUM_TH_2D 16
 inline static int GET_BLOCKS_2D(const int N) {
   return (N + NUM_TH_2D - 1) / NUM_TH_2D;
 }
 
-__global__ void calculate_map_kernel(const int height, const int width, const float *M, float *xMap, float *yMap)
+__global__ void calculate_map_kernel(const int height, const int width, 
+   const float M0, const float M1, const float M2, const float M3, const float M4, const float M5,
+   float *xMap, float *yMap)
 {
   for (int y = blockIdx.y * blockDim.y + threadIdx.y; y < height; y += blockDim.y * gridDim.y)
     for (int x = blockIdx.x * blockDim.x + threadIdx.x; x < width; x += blockDim.x * gridDim.x)
     {
-      xMap[x + y * width] = (float)x * M[0] + (float)y * M[1] + M[2];
-      yMap[x + y * width] = (float)x * M[3] + (float)y * M[4] + M[5];
+      xMap[x + y * width] = (float)x * M0 + (float)y * M1 + M2;
+      yMap[x + y * width] = (float)x * M3 + (float)y * M4 + M5;
     }
 }
 
@@ -33,7 +36,7 @@ void static my_warp_affine_P3R(const Npp8u * pSrc[3], NppiSize oSrcSize, int nSr
                                      Npp8u * pDst[3], int nDstStep, NppiRect oDstROI,
                                const double aCoeffs[2][3], int eInterpolation, float *xMap, float *yMap)
 {
-  float M[6]; 
+  float M[6];
   { // inverse the transform matrix
     M[0] = (float)aCoeffs[0][0];
     M[1] = (float)aCoeffs[0][1];
@@ -54,12 +57,12 @@ void static my_warp_affine_P3R(const Npp8u * pSrc[3], NppiSize oSrcSize, int nSr
   }
   dim3 num_thread(NUM_TH_2D, NUM_TH_2D);
   dim3 num_block(GET_BLOCKS_2D(oDstROI.width), GET_BLOCKS_2D(oDstROI.height));
-  calculate_map_kernel<<<num_block, num_thread>>>(oDstROI.height, oDstROI.width, M, xMap, yMap);
+  calculate_map_kernel<<<num_block, num_thread>>>(oDstROI.height, oDstROI.width, M[0], M[1], M[2], M[3], M[4], M[5], xMap, yMap);
   CUDA_POST_KERNEL_CHECK;
   const NppiSize oDstSizeROI = { oDstROI.width , oDstROI.height };
   NPP_CHECK(nppiRemap_8u_P3R(
     pSrc, oSrcSize, nSrcStep, oSrcROI,
-    xMap, oDstROI.width, yMap, oDstROI.width,
+    xMap, oDstROI.width * sizeof(float), yMap, oDstROI.width * sizeof(float),
     pDst, nDstStep, oDstSizeROI, eInterpolation)
   );
 }
@@ -89,12 +92,12 @@ void static my_warp_affine_C1R(const Npp8u * pSrc, NppiSize oSrcSize, int nSrcSt
   }
   dim3 num_thread(NUM_TH_2D, NUM_TH_2D);
   dim3 num_block(GET_BLOCKS_2D(oDstROI.width), GET_BLOCKS_2D(oDstROI.height));
-  calculate_map_kernel<<<num_block, num_thread >>>(oDstROI.height, oDstROI.width, M, xMap, yMap);
+  calculate_map_kernel<<<num_block, num_thread >>>(oDstROI.height, oDstROI.width, M[0], M[1], M[2], M[3], M[4], M[5], xMap, yMap);
   CUDA_POST_KERNEL_CHECK;
   const NppiSize oDstSizeROI = { oDstROI.width , oDstROI.height };
   NPP_CHECK(nppiRemap_8u_C1R(
     pSrc, oSrcSize, nSrcStep, oSrcROI,
-    xMap, oDstROI.width, yMap, oDstROI.width,
+    xMap, oDstROI.width * sizeof(float), yMap, oDstROI.width * sizeof(float),
     pDst, nDstStep, oDstSizeROI, eInterpolation)
   );
 }
