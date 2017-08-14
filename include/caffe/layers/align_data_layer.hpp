@@ -24,8 +24,10 @@ class AlignBatch {
   std::vector<int> w_, h_;
   std::vector< shared_ptr<Blob<float> > > data_;
   std::vector<cv::Mat> trans_;
+  Blob<float> trans_blob_;
   Blob<float> pts_;
   Blob<float> label_; 
+  Blob<float> extra_data_;
 };
   
 template <typename Dtype>
@@ -40,6 +42,8 @@ class AlignDataLayer : public BaseDataLayer<Dtype>, public InternalThread
 
   virtual inline const char* type() const { return "AlignData"; }
   virtual inline int ExactNumBottomBlobs() const { return 0; }
+  virtual inline int MinTopBlobs() const { return 3; }
+  virtual inline int MaxTopBlobs() const { return 5; }
  
   virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top);
@@ -58,6 +62,7 @@ class AlignDataLayer : public BaseDataLayer<Dtype>, public InternalThread
   vector<shared_ptr<AlignBatch> > prefetch_;
   BlockingQueue<AlignBatch*> prefetch_free_, prefetch_full_;
   int expect_channels_;
+  int expect_extra_data_; // in number of elements
   Blob<float> warpBuffer_;
   Blob<Dtype> data_mean_;
   std::vector<unsigned char *> pWarpDst_;

@@ -287,6 +287,8 @@ void AlignDataLayer<Dtype>::LayerSetUp(
   const Datum& datum = dbQueue.startReading();
   topShape[1] = datum.channels();
   expect_channels_ = datum.channels();
+  expect_extra_data_ = datum.float_data().size() - 2 * augmentation_param_.num_points();
+  CHECK_GE(expect_extra_data_, 0) << "Datum should hold at least 2 * num_points float elements";
   dbQueue.finishReading();
   
   // init warpBuffer_ and destination ptr for warpaffine in GPU
@@ -376,11 +378,29 @@ void AlignDataLayer<Dtype>::LayerSetUp(
   
   std::vector<int> labelShape(1, batch_size);
   top[2]->Reshape(labelShape);
+
+  std::vector<int> transShape(1, batch_size);
+  transShape.push_back(6);
+  if (top.size() > 3)
+  { // should forward the affine transformation matrix
+    top[3]->Reshape(transShape);
+  }
+
+  std::vector<int> extraDataShape(1, batch_size);
+  // prevent empty blob
+  extraDataShape.push_back(expect_extra_data_ > 0 ? expect_extra_data_ : 1);
+  if (top.size() > 4)
+  {
+    CHECK_GT(expect_extra_data_, 0) << "no extra data to forward";
+    top[4]->Reshape(extraDataShape);
+  }
   
   for (size_t i = 0; i < prefetch_.size(); i ++)
   {
     prefetch_[i]->pts_.Reshape(ptsShape);
     prefetch_[i]->label_.Reshape(labelShape);
+    prefetch_[i]->trans_blob_.Reshape(transShape);
+    prefetch_[i]->extra_data_.Reshape(extraDataShape);
     prefetch_[i]->data_.resize(batch_size);
     for (size_t sample = 0; sample < prefetch_[i]->data_.size(); sample ++)
       prefetch_[i]->data_[sample].reset(new Blob<float>);
@@ -393,6 +413,8 @@ void AlignDataLayer<Dtype>::LayerSetUp(
   {
     prefetch_[i]->pts_.mutable_cpu_data();
     prefetch_[i]->label_.mutable_cpu_data();
+    prefetch_[i]->trans_blob_.mutable_cpu_data();
+    prefetch_[i]->extra_data_.mutable_cpu_data();
   }
 #ifndef CPU_ONLY
   if (Caffe::mode() == Caffe::GPU) {
@@ -400,6 +422,8 @@ void AlignDataLayer<Dtype>::LayerSetUp(
     {
       prefetch_[i]->pts_.mutable_gpu_data();
       prefetch_[i]->label_.mutable_gpu_data();
+      prefetch_[i]->trans_blob_.mutable_gpu_data();
+      prefetch_[i]->extra_data_.mutable_gpu_data();
     }
   }
 #endif
@@ -430,11 +454,14 @@ void AlignDataLayer<Dtype>::load_batch(AlignBatch& batch)
   
   float *pts_data = batch.pts_.mutable_cpu_data();
   float *label_data = batch.label_.mutable_cpu_data();
+  float *trans_blob_data = batch.trans_blob_.mutable_cpu_data();
+  float *extra_data_data = batch.extra_data_.mutable_cpu_data();
   for (int sample = 0; sample < batch_size; sample ++)
   {
     const Datum& datum = dbQueue.startReading();
     CHECK_EQ(expect_channels_, datum.channels()) << " #channel dismatch! ";
-    CHECK_EQ(num_pt * 2, datum.float_data().size()) << " float data should have length of num_pt * 2";
+    CHECK_EQ(num_pt * 2 + expect_extra_data_, datum.float_data().size()) 
+      << " float data should have length of num_pt * 2 + expect_extra_data_";
     // load datum into batch
     label_data[sample] = datum.label();
     loadImgIntoAlignBatch(batch, sample, datum);
@@ -442,6 +469,12 @@ void AlignDataLayer<Dtype>::load_batch(AlignBatch& batch)
     cv::Mat aug_pts;
     batch.trans_[sample] = align_augmenter_->Augment(originPts, aug_pts);
     memcpy(pts_data + sample * 2 * num_pt, aug_pts.data, 2 * num_pt * sizeof(float));
+    memcpy(trans_blob_data + sample * 6, batch.trans_[sample].data, 6 * sizeof(float));
+    if (expect_extra_data_)
+      memcpy(
+        extra_data_data + sample * expect_extra_data_,
+        datum.float_data().data() + 2 * num_pt,
+        expect_extra_data_ * sizeof(float));
     // finish reading
     dbQueue.finishReading();
   }
@@ -468,6 +501,8 @@ void AlignDataLayer<Dtype>::InternalThreadEntry()
         //  batch->data_[i].data().get()->async_gpu_push(stream);
         batch->label_.data().get()->async_gpu_push(stream);
         batch->pts_.data().get()->async_gpu_push(stream);
+        batch->trans_blob_.data().get()->async_gpu_push(stream);
+        batch->extra_data_.data().get()->async_gpu_push(stream);
         CUDA_CHECK(cudaStreamSynchronize(stream));
       }
 #endif

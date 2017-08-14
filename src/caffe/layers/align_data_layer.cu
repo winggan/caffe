@@ -303,10 +303,24 @@ void AlignDataLayer<Dtype>::Forward_gpu(
     batch->pts_.count(), batch->pts_.gpu_data(), top[1]->mutable_gpu_data()
   );
   CUDA_POST_KERNEL_CHECK;
-  align_float2dtype_kernel<<<CAFFE_GET_BLOCKS(batch->pts_.count()), CAFFE_CUDA_NUM_THREADS>>>(
+  align_float2dtype_kernel<<<CAFFE_GET_BLOCKS(batch->label_.count()), CAFFE_CUDA_NUM_THREADS>>>(
     batch->label_.count(), batch->label_.gpu_data(), top[2]->mutable_gpu_data()
   );
   CUDA_POST_KERNEL_CHECK;
+  if (top.size() > 3)
+  {
+    align_float2dtype_kernel<<<CAFFE_GET_BLOCKS(batch->trans_blob_.count()), CAFFE_CUDA_NUM_THREADS>>>(
+      batch->trans_blob_.count(), batch->trans_blob_.gpu_data(), top[3]->mutable_gpu_data()
+    );
+    CUDA_POST_KERNEL_CHECK;
+  }
+  if (top.size() > 4)
+  {
+    align_float2dtype_kernel<<<CAFFE_GET_BLOCKS(batch->extra_data_.count()), CAFFE_CUDA_NUM_THREADS>>>(
+      batch->extra_data_.count(), batch->extra_data_.gpu_data(), top[4]->mutable_gpu_data()
+    );
+    CUDA_POST_KERNEL_CHECK;
+  }
   // Ensure the copy is synchronous wrt the host, so that the next batch isn't
   // copied in meanwhile.
   CUDA_CHECK(cudaStreamSynchronize(cudaStreamDefault));
