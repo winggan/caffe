@@ -18,7 +18,8 @@ template <typename Dtype>
 class BaseConvolutionLayer : public Layer<Dtype> {
  public:
   explicit BaseConvolutionLayer(const LayerParameter& param)
-      : Layer<Dtype>(param) {}
+      : Layer<Dtype>(param),
+        need_col_buffer_(true) {}
   virtual void LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top);
   virtual void Reshape(const vector<Blob<Dtype>*>& bottom,
@@ -92,6 +93,8 @@ class BaseConvolutionLayer : public Layer<Dtype> {
   bool bias_term_;
   bool is_1x1_;
   bool force_nd_im2col_;
+  // provide control for cudnn conv to avoid alloc col_buffer_
+  bool need_col_buffer_;
 
  private:
   // wrap im2col/col2im so we don't have to remember the (long) argument lists
