@@ -232,8 +232,8 @@ static void processMirrorExtra(cv::Mat &data, const std::vector<cv::Vec2i> &pair
 }
 
 template <typename Dtype>
-cv::Mat AlignAugmenter<Dtype>::Augment(const cv::Mat &cv_pts, const cv::Mat &cv_extra,
-  cv::Mat &aug_cv_pts, cv::Mat &aug_cv_extra, Caffe::RNG *provided_rng)
+cv::Mat AlignAugmenter<Dtype>::Augment(const cv::Mat &cv_pts, cv::Mat &aug_cv_pts,
+  const cv::Mat &cv_extra, cv::Mat &aug_cv_extra, Caffe::RNG *provided_rng)
 {
   const bool doMirror = (phase_ == TRAIN) ? param_.mirror() && Rand(provided_rng, 2) : false;
   

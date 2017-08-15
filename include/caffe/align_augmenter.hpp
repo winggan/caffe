@@ -49,11 +49,11 @@ class AlignAugmenter {
     
 	void Augment(const cv::Mat &cv_img, const cv::Mat &cv_pts, cv::Mat &aug_cv_img, cv::Mat &aug_cv_pts);
   
-  cv::Mat Augment(const cv::Mat &cv_pts, const cv::Mat &cv_extra, 
-    cv::Mat &aug_cv_pts, cv::Mat &aug_cv_extra, Caffe::RNG *provided_rng);
-  inline cv::Mat Augment(const cv::Mat &cv_pts, const cv::Mat &cv_extra,
-    cv::Mat &aug_cv_pts, cv::Mat &aug_cv_extra, )
-  { return Augment(cv_pts, cv_extra, aug_cv_pts, aug_cv_extra, rng_.get()); }
+  cv::Mat Augment(const cv::Mat &cv_pts, cv::Mat &aug_cv_pts,
+    const cv::Mat &cv_extra, cv::Mat &aug_cv_extra, Caffe::RNG *provided_rng);
+  inline cv::Mat Augment(const cv::Mat &cv_pts, cv::Mat &aug_cv_pts,
+    const cv::Mat &cv_extra, cv::Mat &aug_cv_extra)
+  { return Augment(cv_pts, aug_cv_pts, cv_extra, aug_cv_extra, rng_.get()); }
   
   inline int width() {return width_;}
   inline int height() {return height_;}
