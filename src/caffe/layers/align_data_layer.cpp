@@ -482,14 +482,17 @@ void AlignDataLayer<Dtype>::load_batch(AlignBatch& batch)
     if (extra_data_stride_)
     {
       int pt_wise_extra = extra_data_stride_ * num_pt;
+      //LOG(ERROR) << "aug_extra.data = " << (unsigned long long)(aug_extra.data);
       memcpy(
         extra_data_data + sample * expect_extra_data_,
         aug_extra.data,
         pt_wise_extra * sizeof(float));
-      memcpy(
-        extra_data_data + sample * expect_extra_data_ + pt_wise_extra,
-        datum.float_data().data() + 2 * num_pt + pt_wise_extra,
-        (expect_extra_data_ - pt_wise_extra) * sizeof(float));
+      //LOG(ERROR) << "expect_extra_data_, pt_wise_extra = " << expect_extra_data_ << ", " <<pt_wise_extra;
+      if (expect_extra_data_ - pt_wise_extra)
+        memcpy(
+          extra_data_data + sample * expect_extra_data_ + pt_wise_extra,
+          datum.float_data().data() + 2 * num_pt + pt_wise_extra,
+          (expect_extra_data_ - pt_wise_extra) * sizeof(float));
     }
     else if (expect_extra_data_)
       memcpy(

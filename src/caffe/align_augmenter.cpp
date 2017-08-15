@@ -261,14 +261,12 @@ cv::Mat AlignAugmenter<Dtype>::Augment(const cv::Mat &cv_pts, cv::Mat &aug_cv_pt
   trans.convertTo(trans, CV_32F);
   aug_cv_pts = warpPointMat(cv_pts, trans);
   
+  aug_cv_extra = cv_extra.clone();
   if (doMirror)
   {
     processMirrorPtsf(aug_cv_pts, mirrorPairs_);
     if (cv_extra.cols)
-    {
-      aug_cv_extra = cv_extra.clone();
       processMirrorExtra(aug_cv_extra, mirrorPairs_);
-    }
   }
   
   if(param_.normalize())
