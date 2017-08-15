@@ -474,9 +474,9 @@ void AlignDataLayer<Dtype>::load_batch(AlignBatch& batch)
     cv::Mat aug_pts;
     cv::Mat originExtra, aug_extra;
     if (extra_data_stride_)
-      originExtra.create(num_pt, extra_data_stride_, CV_32F, 
+      originExtra = cv::Mat(num_pt, extra_data_stride_, CV_32F, 
         const_cast<float *>(datum.float_data().data() + num_pt * 2));
-    batch.trans_[sample] = align_augmenter_->Augment(originPts, aug_pts, originExtra, aug_extra);
+    batch.trans_[sample] = align_augmenter_->Augment(originPts, aug_pts, (const cv::Mat&)originExtra, aug_extra);
     memcpy(pts_data + sample * 2 * num_pt, aug_pts.data, 2 * num_pt * sizeof(float));
     memcpy(trans_blob_data + sample * 6, batch.trans_[sample].data, 6 * sizeof(float));
     if (extra_data_stride_)

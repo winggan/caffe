@@ -146,7 +146,7 @@ void AlignImageDataLayer<Dtype>::DataLayerSetUp(const vector<Blob<Dtype>*>& bott
   CHECK_EQ(samplePts.rows, augmentation_param_.num_points()) 
     << "Invalid pts: number of points do not match";
   cv::Mat cv_img, cv_pts;
-  align_augmenter_->Augment(sampleImg, samplePts, cv_img, cv_pts);
+  align_augmenter_->Augment(sampleImg, (const cv::Mat&)samplePts, cv_img, cv_pts);
   
   std::vector<int> top_shape = this->data_transformer_->InferBlobShape(cv_img);
   this->transformed_data_.Reshape(top_shape);
@@ -231,7 +231,7 @@ void AlignImageDataLayer<Dtype>::load_batch(Batch<Dtype>* batch)
   CHECK_EQ(rawPts.rows, augmentation_param_.num_points())
     << "Invalid pts: number of points do not match";
   cv::Mat cv_img, cv_pts;
-  align_augmenter_->Augment(rawImage, rawPts, cv_img, cv_pts);
+  align_augmenter_->Augment(rawImage, (const cv::Mat&)rawPts, cv_img, cv_pts);
   
   std::vector<int> top_shape = this->data_transformer_->InferBlobShape(cv_img);
   this->transformed_data_.Reshape(top_shape);
@@ -319,7 +319,7 @@ void AlignImageDataLayer<Dtype>::load_batch(Batch<Dtype>* batch)
 
     timer.Start();
     // produce an instance of augmentation
-    align_augmenter_->Augment(rawImage, rawPts, cv_img, cv_pts);
+    align_augmenter_->Augment(rawImage, (const cv::Mat&)rawPts, cv_img, cv_pts);
     // copy image data
     int offset = batch->data_.offset(item_id);
     this->transformed_data_.set_cpu_data(prefetch_data + offset);
@@ -586,7 +586,7 @@ void AlignImageDataLayer<Dtype>::AlignAugmentWorker<DDtype>::InternalThreadEntry
           ptsTime += timer.MicroSeconds();
           timer.Start();
           // produce an instance of augmentation
-          align_augmenter_->Augment(rawImage, rawPts, cv_img, cv_pts);
+          align_augmenter_->Augment(rawImage, (const cv::Mat&)rawPts, cv_img, cv_pts);
           warpTime += timer.MicroSeconds();
           timer.Start();
           // copy image data
