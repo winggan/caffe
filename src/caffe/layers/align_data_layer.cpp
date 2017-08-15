@@ -280,6 +280,10 @@ void AlignDataLayer<Dtype>::LayerSetUp(
   AlignDataInternal::QueuePair& dbQueue = loader.getReadingQueue(Caffe::solver_rank());
   const int batch_size = this->layer_param_.align_data_param().batch_size();
   
+  extra_data_stride_ = this->layer_param_.align_data_param().point_wise_extra_data_stride();
+  if (extra_data_stride_ > 0)
+    LOG(INFO) << "has point-wise extra data, stride = " << extra_data_stride_;
+
   std::vector<int> topShape(4);
   topShape[0] = batch_size;
   topShape[2] = align_augmenter_->height();
@@ -288,7 +292,8 @@ void AlignDataLayer<Dtype>::LayerSetUp(
   topShape[1] = datum.channels();
   expect_channels_ = datum.channels();
   expect_extra_data_ = datum.float_data().size() - 2 * augmentation_param_.num_points();
-  CHECK_GE(expect_extra_data_, 0) << "Datum should hold at least 2 * num_points float elements";
+  CHECK_GE(expect_extra_data_, augmentation_param_.num_points() * extra_data_stride_)
+    << "Datum should hold at least (2 + " << extra_data_stride_ << ") * num_points float elements";
   dbQueue.finishReading();
   
   // init warpBuffer_ and destination ptr for warpaffine in GPU
@@ -467,10 +472,26 @@ void AlignDataLayer<Dtype>::load_batch(AlignBatch& batch)
     loadImgIntoAlignBatch(batch, sample, datum);
     cv::Mat originPts(num_pt, 2, CV_32F, const_cast<float *>(datum.float_data().data()));
     cv::Mat aug_pts;
-    batch.trans_[sample] = align_augmenter_->Augment(originPts, aug_pts);
+    cv::Mat originExtra, aug_extra;
+    if (extra_data_stride_)
+      originExtra.create(num_pt, extra_data_stride_, CV_32F, 
+        const_cast<float *>(datum.float_data().data() + num_pt * 2));
+    batch.trans_[sample] = align_augmenter_->Augment(originPts, originExtra, aug_pts, aug_extra);
     memcpy(pts_data + sample * 2 * num_pt, aug_pts.data, 2 * num_pt * sizeof(float));
     memcpy(trans_blob_data + sample * 6, batch.trans_[sample].data, 6 * sizeof(float));
-    if (expect_extra_data_)
+    if (extra_data_stride_)
+    {
+      int pt_wise_extra = extra_data_stride_ * num_pt;
+      memcpy(
+        extra_data_data + sample * expect_extra_data_,
+        aug_extra.data,
+        pt_wise_extra * sizeof(float));
+      memcpy(
+        extra_data_data + sample * expect_extra_data_ + pt_wise_extra,
+        datum.float_data().data() + 2 * num_pt + pt_wise_extra,
+        (expect_extra_data_ - pt_wise_extra) * sizeof(float));
+    }
+    else if (expect_extra_data_)
       memcpy(
         extra_data_data + sample * expect_extra_data_,
         datum.float_data().data() + 2 * num_pt,

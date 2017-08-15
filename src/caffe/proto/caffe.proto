@@ -1512,6 +1512,10 @@ message AlignDataParameter {
   // limit of device memory for GPU training)
   optional uint32 prefetch = 6 [default = 4];
   optional AlignAugmentationParameter augment_param = 7;
+  // first num_pt * point_wise_extra_data_stride elements of extra data are split 
+  // into num_pt group (point_wise_extra_data_stride elements for each group), 
+  // corresponding to each point
+  optional uint32 point_wise_extra_data_stride = 8 [default = 0];
 }
 
 message ReorganizeParameter {

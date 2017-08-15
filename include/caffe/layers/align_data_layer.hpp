@@ -63,6 +63,7 @@ class AlignDataLayer : public BaseDataLayer<Dtype>, public InternalThread
   BlockingQueue<AlignBatch*> prefetch_free_, prefetch_full_;
   int expect_channels_;
   int expect_extra_data_; // in number of elements
+  int extra_data_stride_; // in number of elements
   Blob<float> warpBuffer_;
   Blob<Dtype> data_mean_;
   std::vector<unsigned char *> pWarpDst_;

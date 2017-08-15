@@ -214,9 +214,26 @@ void AlignAugmenter<Dtype>::Augment(const cv::Mat &cv_img, const cv::Mat &cv_pts
   }
 }
 
+static void processMirrorExtra(cv::Mat &data, const std::vector<cv::Vec2i> &pairs)
+{
+  for (size_t i = 0; i < pairs.size(); i++)
+  {
+    int a = pairs[i][0];
+    int b = pairs[i][1];
+    float *pa = data.ptr<float>(a);
+    float *pb = data.ptr<float>(b);
+    for (int d = 0; d < data.cols; d++)
+    {
+      float t = pa[d];
+      pa[d] = pb[d];
+      pb[d] = t;
+    }
+  }
+}
+
 template <typename Dtype>
-cv::Mat AlignAugmenter<Dtype>::Augment(const cv::Mat &cv_pts, 
-    cv::Mat &aug_cv_pts, Caffe::RNG *provided_rng)
+cv::Mat AlignAugmenter<Dtype>::Augment(const cv::Mat &cv_pts, const cv::Mat &cv_extra,
+  cv::Mat &aug_cv_pts, cv::Mat &aug_cv_extra, Caffe::RNG *provided_rng)
 {
   const bool doMirror = (phase_ == TRAIN) ? param_.mirror() && Rand(provided_rng, 2) : false;
   
@@ -244,8 +261,15 @@ cv::Mat AlignAugmenter<Dtype>::Augment(const cv::Mat &cv_pts,
   trans.convertTo(trans, CV_32F);
   aug_cv_pts = warpPointMat(cv_pts, trans);
   
-  if(doMirror)
+  if (doMirror)
+  {
     processMirrorPtsf(aug_cv_pts, mirrorPairs_);
+    if (cv_extra.cols)
+    {
+      aug_cv_extra = cv_extra.clone();
+      processMirrorExtra(aug_cv_extra, mirrorPairs_);
+    }
+  }
   
   if(param_.normalize())
   {
