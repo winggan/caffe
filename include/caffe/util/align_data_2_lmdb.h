@@ -25,7 +25,7 @@ namespace data_preprocess
   int scale_down(const cv::Mat &src_img, const cv::Mat &src_pts, const scale_down_param param,
     cv::Mat &output_img, cv::Mat &output_pts, const cv::Mat &mask = cv::Mat());
 
-  int align_data_2_datum(const cv::Mat &data, const cv::Mat &pts, int channels, int label, Datum &out);
+  int align_data_2_datum(const cv::Mat &data, const cv::Mat &pts, const cv::Mat &extra, int channels, int label, Datum &out);
 
   class LMDBWriter
   {

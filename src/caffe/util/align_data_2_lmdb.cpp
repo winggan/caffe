@@ -111,7 +111,7 @@ int scale_down(const cv::Mat &src_img, const cv::Mat &src_pts, const scale_down_
 
 }
 
-int align_data_2_datum(const cv::Mat &data, const cv::Mat &pts, int channels, int label, Datum &out)
+int align_data_2_datum(const cv::Mat &data, const cv::Mat &pts, const cv::Mat &extra, int channels, int label, Datum &out)
 {
   CHECK(data.data);
   CHECK(pts.data);
@@ -135,6 +135,14 @@ int align_data_2_datum(const cv::Mat &data, const cv::Mat &pts, int channels, in
     out.add_float_data(row[0]);
     out.add_float_data(row[1]);
   }
+  if (!extra.empty())
+    for (int r = 0; r < extra.rows; r++)
+    {
+      const float* row = extra.ptr<float>(r);
+      for (int c = 0; c < extra.cols; c++)
+        out.add_float_data(row[c]);
+    }
+
 
   return 0;
 }

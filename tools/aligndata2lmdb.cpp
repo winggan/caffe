@@ -16,10 +16,11 @@ static scale_down_param param = {
 enum SrcType
 {
   PTS, // one pts file for each image sample, two path and a label in each line
-  CELEBA // celaba annotation: image path and coordinates of points without label for each line
+  CELEBA, // celaba annotation: image path and coordinates of points without label for each line
+  OCCPTS //  tow pts file for each image sample, three path and a label in each line
 };
 
-static int(*lineProcessor)(const std::string &line, cv::Mat &img, cv::Mat &pts, int &label) = NULL;
+static int(*lineProcessor)(const std::string &line, cv::Mat &img, cv::Mat &pts, cv::Mat &extra, int &label) = NULL;
 static SrcType src_type;
 static std::string src_path;
 static int global_label = 1;
@@ -82,7 +83,7 @@ static cv::Mat readPtsFile(const char* fileName)
 }
 
 
-static int ptsLineProcessor(const std::string &line, cv::Mat &img, cv::Mat &pts, int &label)
+static int ptsLineProcessor(const std::string &line, cv::Mat &img, cv::Mat &pts, cv::Mat &extra, int &label)
 {
   std::string imgPath, ptsPath;
   {
@@ -115,7 +116,59 @@ static int ptsLineProcessor(const std::string &line, cv::Mat &img, cv::Mat &pts,
   return 0;
 }
 
-static int celebaLineProcessor(const std::string &line, cv::Mat &img, cv::Mat &pts, int &label)
+static int occluPtsLineProcessor(const std::string &line, cv::Mat &img, cv::Mat &pts, cv::Mat &extra, int &label)
+{
+  std::string imgPath, ptsPath, occPath;
+  {
+    std::string streamSrc = line + " ";
+    std::stringstream ss(streamSrc, std::ios_base::in);
+    std::vector<std::string> parts;
+    while(!ss.eof())
+    {
+      std::string line;
+      std::getline(ss, line, ' ');
+      if (line.length() > 0)
+        parts.push_back(line); 
+    }
+    if (parts.size() != 4)
+      return 1;
+    if (1 != sscanf(parts[3].c_str(), "%d", &label) || label < 0)
+      return 2;
+    imgPath = parts[0];
+    ptsPath = parts[1]; 
+    occPath = parts[2];
+  }
+  //LOG(INFO) << "pts path = " << ptsPath;
+  pts = readPtsFile(ptsPath.c_str());
+  if (pts.empty())
+    return 3;
+
+  img = cv::imread(imgPath, CV_LOAD_IMAGE_COLOR);
+  if (img.empty())
+    return 4;
+    
+  cv::Mat occTmp;
+  occTmp = readPtsFile(occPath.c_str());
+  if (occTmp.empty())
+    return 5;
+  
+  if (occTmp.rows != pts.rows)
+    return 6;
+    
+  extra.create(1, occTmp.rows, CV_32F);
+  float *dst = extra.ptr<float>();
+  for (int i = 0; i < occTmp.rows; i ++)
+  {
+    const float *row = occTmp.ptr<float>(i);
+    if (row[0] != row[1])
+      return 7;
+    dst[i] = row[0];
+  }
+  
+  return 0;
+}
+
+static int celebaLineProcessor(const std::string &line, cv::Mat &img, cv::Mat &pts, cv::Mat &extra, int &label)
 {
   int pos = line.find_first_of(" ");
   label = global_label;
@@ -160,6 +213,8 @@ static void parse_parameters(int argc, char **argv)
       src_type = PTS;
     else if (typeStr == "celeba")
       src_type = CELEBA;
+    else if (typeStr == "occpts")
+      src_type = OCCPTS;
     else
       LOG(FATAL) << "unknown src type";
 
@@ -167,6 +222,8 @@ static void parse_parameters(int argc, char **argv)
       lineProcessor = ptsLineProcessor;
     else if (src_type == CELEBA)
       lineProcessor = celebaLineProcessor;
+    else if (src_type == OCCPTS)
+      lineProcessor = occluPtsLineProcessor;
     else
       LOG(FATAL) << "unknown src type";
   }
@@ -226,8 +283,8 @@ static void parse_parameters(int argc, char **argv)
 int main(int argc, char **argv)
 {
   if (argc < 3 || argc > 9)
-  {//                           0  1          2        3       4                  5                    6               7               8
-    fprintf(stderr, "Usage:\n  %s pts/celeba src_path [label] [color/gray=color] [net_input_size=112] [max_rotate=10] [min_crop=0.85] [max_crop=1.6]\n", argv[0]);
+  {//                           0  1                 2        3       4                  5                    6               7               8
+    fprintf(stderr, "Usage:\n  %s pts/celeba/occpts src_path [label] [color/gray=color] [net_input_size=112] [max_rotate=10] [min_crop=0.85] [max_crop=1.6]\n", argv[0]);
     return 1;
   }
   
@@ -242,6 +299,7 @@ int main(int argc, char **argv)
   LMDBWriter lmdb(dstPath);
   std::string line;
   cv::Mat previousPts;  
+  cv::Mat previousExtra;
  
   for (size_t i = 0; !list.eof(); i++)
   {
@@ -249,9 +307,9 @@ int main(int argc, char **argv)
     if (line.length() == 0)
       continue;
 
-    cv::Mat img, pts, processed_img, processed_pts; 
+    cv::Mat img, pts, processed_img, processed_pts, extra;
     int label, code;
-    if (0 != (code = lineProcessor(line, img, pts, label)) )
+    if (0 != (code = lineProcessor(line, img, pts, extra, label)) )
     {
       LOG(ERROR) << "error process line with code " << code << ": " << line;
       continue;
@@ -260,6 +318,13 @@ int main(int argc, char **argv)
     if (previousPts.data && previousPts.rows != pts.rows)
       LOG(FATAL) << "#points dismatch: " << previousPts.rows << " vs " << pts.rows;
     previousPts = pts;
+    
+    if (!extra.empty() && extra.rows != 1)
+      LOG(FATAL) << "extra_data should be stored in an array";
+    
+    if (previousExtra.data && (extra.empty() || previousExtra.cols != extra.cols))
+      LOG(FATAL) << "#extra_data dismatch: " << previousExtra.cols << " vs " << extra.cols;
+    previousExtra = extra;
 
     //LOG(INFO) << "pts.size " << pts.rows << ", " << pts.cols;
     scale_down(img, pts, param, processed_img, processed_pts);
@@ -269,7 +334,7 @@ int main(int argc, char **argv)
       LOG(INFO) << "Invalid input image or pts at line: " << line;
       continue;
     }
-    align_data_2_datum(processed_img, processed_pts, param.is_color ? 3 : 1, label, msg);
+    align_data_2_datum(processed_img, processed_pts, extra, param.is_color ? 3 : 1, label, msg);
     lmdb.put(i, msg);
     if (i % commit_size == 0)
       lmdb.commit();
