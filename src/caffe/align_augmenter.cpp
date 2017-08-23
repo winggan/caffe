@@ -33,15 +33,18 @@ AlignAugmenter<Dtype>::AlignAugmenter(const AlignAugmentationParameter &param,
   
   if (param_.has_mirror() && param_.mirror())
   {
-    CHECK_GT(param_.idx_left_points_size(), 0) 
+    CHECK_GE(param_.idx_left_points_size(), 0) 
       << "Mirror is permitted, must specify indecies of points that is on the left";
-    CHECK_GT(param_.idx_right_points_size(), 0) 
+    CHECK_GE(param_.idx_right_points_size(), 0) 
       << "Mirror is permitted, must specify indecies of points that is on the right";
     CHECK_EQ(param_.idx_right_points_size(), param_.idx_left_points_size()) 
       << "Number of points on the left must be same as that on the right";
     CHECK_LE(param_.idx_left_points_size() * 2, param_.num_points())
       << "points on the left + points on the right cannot be larger than total number of points";
-      
+    
+    if (0 == param_.idx_left_points_size())
+      LOG(WARNING) << "Warning: no points will be swapped when performing mirror operation!";
+  
     const int pairLength = param_.idx_left_points_size();
     std::vector<int> checkUniqueList(param_.num_points(), 0);
     for(int i = 0; i < pairLength; i ++)
