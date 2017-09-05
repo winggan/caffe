@@ -56,7 +56,7 @@ void NormedEuclideanLossLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bo
   caffe_mul(count, bottom[0]->cpu_data(), this->diff_.cpu_diff(),
     bottom[1]->mutable_cpu_diff());
 
-  Dtype dot = caffe_cpu_dot(count, diff_.cpu_data(), diff_.cpu_data());
+  Dtype dot = caffe_cpu_dot(count, this->diff_.cpu_data(), this->diff_.cpu_data());
   Dtype loss = dot / bottom[0]->num() / Dtype(2);
   top[0]->mutable_cpu_data()[0] = loss;
 }
