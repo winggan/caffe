@@ -6,7 +6,7 @@ template <typename Dtype>
 class DmapReLULayer : public NeuronLayer<Dtype>
 {
  public:
-  explicit ReLULayer(const LayerParameter& param)
+  explicit DmapReLULayer(const LayerParameter& param)
       : NeuronLayer<Dtype>(param) {}
   
   virtual inline const char* type() const { return "DmapReLU"; }

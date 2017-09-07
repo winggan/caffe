@@ -3,7 +3,7 @@
 namespace caffe {
 
 template <typename Dtype>
-__global__ void DmapReLUForward(const int n, const Dtype* in, Dtype* out, const Dtype* gt
+__global__ void DmapReLUForward(const int n, const Dtype* in, Dtype* out, const Dtype* gt,
     Dtype negative_slope) {
   CUDA_KERNEL_LOOP(index, n) {
     Dtype indicator = (Dtype)( (in[index] > 0) | (gt[index] > 0) );
@@ -55,7 +55,7 @@ void DmapReLULayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
     const int count = bottom[0]->count();
     Dtype negative_slope = this->layer_param_.relu_param().negative_slope();
     // NOLINT_NEXT_LINE(whitespace/operators)
-    ReLUBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
+    DmapReLUBackward<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
         count, top_diff, bottom_data, gt_data, bottom_diff, negative_slope);
     CUDA_POST_KERNEL_CHECK;
   }
