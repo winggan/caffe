@@ -308,7 +308,7 @@ message ParamSpec {
 // NOTE
 // Update the next available ID when you add a new LayerParameter field.
 //
-// LayerParameter next available layer-specific ID: 153 (last added: center_loss_param)
+// LayerParameter next available layer-specific ID: 154 (last added: dense_block_param)
 message LayerParameter {
   optional string name = 1; // the layer name
   optional string type = 2; // the layer type
@@ -372,6 +372,7 @@ message LayerParameter {
   optional ConvolutionParameter convolution_param = 106;
   optional CropParameter crop_param = 144;
   optional DataParameter data_param = 107;
+  optional DenseBlockParameter dense_block_param = 153;
   optional DropoutParameter dropout_param = 108;
   optional DummyDataParameter dummy_data_param = 109;
   optional EltwiseParameter eltwise_param = 110;
@@ -1543,4 +1544,30 @@ message CenterLossParameter {
   // all preceding axes are retained in the output.
   // May be negative to index from the end (e.g., -1 for the last axis).
   optional int32 axis = 3 [default = 1];
+}
+
+message DenseBlockParameter {
+  // the number of BN-ReLU-conv3x3 (or BN-ReLU-conv1x1-BN-ReLU-conv3x3 for 
+  // bottleneck version) blocks in the dense block
+  optional uint32 num_layers = 1 [default = 10];
+  optional uint32 growth_rate = 2 [default = 4];
+  optional bool use_bottleneck = 3 [default = true];
+  // by default the bottleneck conv1x1 will compress the number of feature-
+  // maps into 4*growth_rate
+  optional uint32 bottleneck_rate = 4 [default = 4];
+  
+  // conv relative
+  optional bool conv1x1_bias_term = 5 [default = false];
+  optional FillerParameter conv1x1_bias_filler = 6;
+  optional FillerParameter conv1x1_weights_filler = 7;
+  
+  optional bool conv3x3_bias_term = 8 [default = false];
+  optional FillerParameter conv3x3_bias_filler = 9;
+  optional FillerParameter conv3x3_weights_filler = 10;
+  
+  optional ReLUParameter relu_param = 11;
+  
+  optional bool use_dropout = 12 [default = false];
+  optional DropoutParameter dropout_param = 13;
+  
 }
