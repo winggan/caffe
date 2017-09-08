@@ -16,4 +16,6 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
   NOT_IMPLEMENTED;
 }
 
+INSTANTIATE_LAYER_GPU_FUNCS(DenseBlockLayer);
+
 } // namespace caffe
