@@ -87,6 +87,8 @@ void DenseBlockLayer<Dtype>::convertToPlainLayers(vector<LayerParameter>& layer_
 
     layer_params.push_back(LayerParameter(concat_params_[l]));
   }
+  for (size_t i = 0; i < layer_params.size(); i++)
+    layer_params[i].clear_phase();
 
 }
 
@@ -99,15 +101,18 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
   LayerParameter bn_param_tpl(param_);
   bn_param_tpl.set_type("BatchNorm");
   bn_param_tpl.clear_dense_block_param();
+  bn_param_tpl.clear_param();
   
   LayerParameter scale_param_tpl(param_);
   scale_param_tpl.set_type("Scale");
   scale_param_tpl.clear_dense_block_param();
+  scale_param_tpl.clear_param();
   scale_param_tpl.mutable_scale_param()->set_bias_term(true);
 
   LayerParameter relu_param_tpl(param_);
   relu_param_tpl.set_type("ReLU");
   relu_param_tpl.clear_dense_block_param();
+  relu_param_tpl.clear_param();
   relu_param_tpl.mutable_relu_param()->CopyFrom(param_.dense_block_param().relu_param());
 
   LayerParameter dropout_param_tpl(param_);
@@ -115,12 +120,14 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
   {
     dropout_param_tpl.set_type("Dropout");
     dropout_param_tpl.clear_dense_block_param();
+    dropout_param_tpl.clear_param();
     dropout_param_tpl.mutable_dropout_param()->CopyFrom(param_.dense_block_param().dropout_param());
   }
 
   LayerParameter conv3x3_param_tpl(param_);
   conv3x3_param_tpl.set_type("Convolution");
   conv3x3_param_tpl.clear_dense_block_param();
+  conv3x3_param_tpl.clear_param();
   {
     ConvolutionParameter* conv_param = conv3x3_param_tpl.mutable_convolution_param();
     conv_param->add_kernel_size(3);
@@ -139,6 +146,7 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
   {
     conv1x1_param_tpl.set_type("Convolution");
     conv1x1_param_tpl.clear_dense_block_param();
+    conv1x1_param_tpl.clear_param();
     ConvolutionParameter* conv_param = conv1x1_param_tpl.mutable_convolution_param();
     conv_param->add_kernel_size(1);
     conv_param->add_pad(0);
@@ -154,6 +162,7 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
   LayerParameter concat_param_tpl(param_);
   concat_param_tpl.set_type("Concat");
   concat_param_tpl.clear_dense_block_param();
+  concat_param_tpl.clear_param();
   concat_param_tpl.mutable_concat_param()->set_axis(1);
 
   std::string prefix = param_.name();
