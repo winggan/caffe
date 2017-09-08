@@ -195,6 +195,27 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
   concat_params_.back().set_top(0, param_.top(0));
 }
 
+template <typename Dtype>
+void DenseBlockLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
+  const vector<Blob<Dtype>*>& top)
+{
+  NOT_IMPLEMENTED;
+}
+
+template <typename Dtype>
+void DenseBlockLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
+  const vector<Blob<Dtype>*>& top)
+{
+  NOT_IMPLEMENTED;
+}
+
+template <typename Dtype>
+void DenseBlockLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
+  const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom)
+{
+  NOT_IMPLEMENTED;
+}
+
 INSTANTIATE_CLASS(DenseBlockLayer);
 REGISTER_LAYER_CLASS(DenseBlock);
 
