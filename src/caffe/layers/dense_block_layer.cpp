@@ -199,7 +199,15 @@ template <typename Dtype>
 void DenseBlockLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
   const vector<Blob<Dtype>*>& top)
 {
-  NOT_IMPLEMENTED;
+  CHECK_EQ(bottom.size(), 1) << "Dense block should have exactly 1 input";
+  CHECK_EQ(top.size(), 1)    << "Dense block should have exactly 1 output";
+
+  vector<int> outputShape(bottom[0]->shape());
+  CHECK_EQ(outputShape.size(), 4) << "Dense block are designed for 4D (n, c, h, w) tensor";
+  outputShape[1] += num_layers_ * growth_rate_;
+  top[0]->Reshape(outputShape);
+
+  // TODO: setup any other intermediate blob needed by the computation
 }
 
 template <typename Dtype>
