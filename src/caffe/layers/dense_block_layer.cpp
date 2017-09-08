@@ -113,7 +113,8 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
   relu_param_tpl.set_type("ReLU");
   relu_param_tpl.clear_dense_block_param();
   relu_param_tpl.clear_param();
-  relu_param_tpl.mutable_relu_param()->CopyFrom(param_.dense_block_param().relu_param());
+  if (param_.dense_block_param().has_relu_param())
+    relu_param_tpl.mutable_relu_param()->CopyFrom(param_.dense_block_param().relu_param());
 
   LayerParameter dropout_param_tpl(param_);
   if (use_dropout_)
@@ -121,7 +122,8 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
     dropout_param_tpl.set_type("Dropout");
     dropout_param_tpl.clear_dense_block_param();
     dropout_param_tpl.clear_param();
-    dropout_param_tpl.mutable_dropout_param()->CopyFrom(param_.dense_block_param().dropout_param());
+    if (param_.dense_block_param().has_dropout_param())
+      dropout_param_tpl.mutable_dropout_param()->CopyFrom(param_.dense_block_param().dropout_param());
   }
 
   LayerParameter conv3x3_param_tpl(param_);
