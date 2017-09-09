@@ -53,6 +53,7 @@ class DenseBlockLayer : public Layer<Dtype>
   vector<LayerParameter> bn_params_, scale_params_, relu_params_, conv3x3_params_, dropout_params_;
   vector<LayerParameter> bottle_bn_params_, bottle_scale_params_, bottle_relu_params_, conv1x1_params_;
   vector<LayerParameter> concat_params_; // does not need for actual computation
+  LayerParameter pre_bn_param, post_scale_param, post_relu_param;
 };
 
 } // namespace caffe

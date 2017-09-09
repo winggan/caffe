@@ -64,18 +64,18 @@ template <typename Dtype>
 void DenseBlockLayer<Dtype>::convertToPlainLayers(vector<LayerParameter>& layer_params)
 {
   layer_params.clear();
+  layer_params.push_back(pre_bn_param);
   for (int l = 0; l < num_layers_; l++)
   {
     
     if (use_bottleneck_)
     {
-      layer_params.push_back(LayerParameter(bottle_bn_params_[l]));
       layer_params.push_back(LayerParameter(bottle_scale_params_[l]));
       layer_params.push_back(LayerParameter(bottle_relu_params_[l]));
       layer_params.push_back(LayerParameter(conv1x1_params_[l]));
+      layer_params.push_back(LayerParameter(bottle_bn_params_[l]));
     }
 
-    layer_params.push_back(LayerParameter(bn_params_[l]));
     layer_params.push_back(LayerParameter(scale_params_[l]));
     layer_params.push_back(LayerParameter(relu_params_[l]));
     layer_params.push_back(LayerParameter(conv3x3_params_[l]));
@@ -85,8 +85,12 @@ void DenseBlockLayer<Dtype>::convertToPlainLayers(vector<LayerParameter>& layer_
       layer_params.push_back(LayerParameter(dropout_params_[l]));
     }
 
+    layer_params.push_back(LayerParameter(bn_params_[l]));
     layer_params.push_back(LayerParameter(concat_params_[l]));
   }
+  layer_params.push_back(post_scale_param);
+  layer_params.push_back(post_relu_param);
+
   for (size_t i = 0; i < layer_params.size(); i++)
     layer_params[i].clear_phase();
 
@@ -169,26 +173,30 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
 
   std::string prefix = param_.name();
   std::string previous_feature_name = param_.bottom(0);
+
+  pre_bn_param.CopyFrom(bn_param_tpl);
+  previous_feature_name = add_layer(previous_feature_name, pre_bn_param, "pre_bn", false);
+
   for (int l = 0; l < num_layers_; l++)
   {
     std::string the_num = _atoi(l);
     std::string blob = previous_feature_name;
+    
     if (use_bottleneck_)
     {
-      bottle_bn_params_.push_back(LayerParameter(bn_param_tpl));
-      blob = add_layer(blob, bottle_bn_params_.back(), "bottle_bn_" + the_num, false);
       bottle_scale_params_.push_back(LayerParameter(scale_param_tpl));
-      blob = add_layer(blob, bottle_scale_params_.back(), "bottle_scale_" + the_num, true);
+      blob = add_layer(blob, bottle_scale_params_.back(), "bottle_scale_" + the_num, false);
       bottle_relu_params_.push_back(LayerParameter(relu_param_tpl));
       blob = add_layer(blob, bottle_relu_params_.back(), "bottle_relu_" + the_num, true);
       conv1x1_params_.push_back(LayerParameter(conv1x1_param_tpl));
       blob = add_layer(blob, conv1x1_params_.back(), "conv1x1_" + the_num, false);
+      bottle_bn_params_.push_back(LayerParameter(bn_param_tpl));
+      blob = add_layer(blob, bottle_bn_params_.back(), "bottle_bn_" + the_num, true);
     }
-    bn_params_.push_back(LayerParameter(bn_param_tpl));
-    // when use bottleneck, input of this bn is the conv1x1
-    blob = add_layer(blob, bn_params_.back(), "bn_" + the_num, use_bottleneck_); 
+    
     scale_params_.push_back(LayerParameter(scale_param_tpl));
-    blob = add_layer(blob, scale_params_.back(), "scale_" + the_num, true);
+    // when not use bottleneck, in-place=>false to avoid modify BN data (stored in shared blob to be output)
+    blob = add_layer(blob, scale_params_.back(), "scale_" + the_num, use_bottleneck_);
     relu_params_.push_back(LayerParameter(relu_param_tpl));
     blob = add_layer(blob, relu_params_.back(), "relu_" + the_num, true);
     conv3x3_params_.push_back(LayerParameter(conv3x3_param_tpl));
@@ -198,12 +206,19 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
       dropout_params_.push_back(LayerParameter(dropout_param_tpl));
       blob = add_layer(blob, dropout_params_.back(), "dropout_" + the_num, true);
     }
+    bn_params_.push_back(LayerParameter(bn_param_tpl));
+    blob = add_layer(blob, bn_params_.back(), "bn_" + the_num, true);
     
     concat_params_.push_back(LayerParameter(concat_param_tpl));
     previous_feature_name = add_concat_layer(previous_feature_name, blob, concat_params_.back(), "concat_" + the_num);
   }
   
   concat_params_.back().set_top(0, param_.top(0));
+  post_scale_param.CopyFrom(scale_param_tpl);
+  add_layer(concat_params_.back().top(0), post_scale_param, "post_scale", true);
+  post_relu_param.CopyFrom(relu_param_tpl);
+  add_layer(post_scale_param.top(0), post_relu_param, "post_relu", true);
+
 }
 
 template <typename Dtype>
