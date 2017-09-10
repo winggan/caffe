@@ -1,4 +1,5 @@
 #include "caffe/layers/dense_block_layer.hpp"
+#include "caffe/layer_factory.hpp"
 #include <string>
 #include <cstdio>
 namespace caffe {
@@ -8,6 +9,39 @@ static std::string _atoi(int num)
   char tmp[20];
   sprintf(tmp, "%d", num);
   return std::string(tmp);
+}
+
+template <typename Dtype>
+static void reshapeHW(Blob<Dtype> &blob, int h, int w)
+{
+  std::vector<int> shape(blob.shape());
+  shape.resize(4, 1);
+  shape[2] = h;
+  shape[3] = w;
+  blob.Reshape(shape);
+}
+
+template <typename Dtype>
+static void reshapeC(Blob<Dtype> &blob, int c)
+{
+  std::vector<int> shape(blob.shape());
+  if (shape.size() >= 2)
+  {
+    shape[1] = c;
+    blob.Reshape(shape);
+  }
+}
+
+template <typename T>
+inline static void append_back(vector<T> &dst, const vector<T> &src)
+{
+  for (size_t i = 0; i < src.size(); i++)dst.push_back(src[i]);
+}
+
+template <typename Dtype>
+inline static void logLayerBlobs(const shared_ptr<Layer<Dtype> >& layer, const LayerParameter param)
+{
+  LOG(INFO) << param.name() << "(" << param.type() << "): blobs_.size() = " << layer->blobs().size();
 }
 
 // return the output blob name
@@ -44,6 +78,14 @@ static std::string add_concat_layer(const std::string &input_blob_name1, const s
 }
 
 template <typename Dtype>
+inline static void createLayers(const vector<LayerParameter> &params, vector<shared_ptr<Layer<Dtype> > >& layers)
+{
+  layers.clear();
+  for (size_t i = 0; i < params.size(); i++)
+    layers.push_back(LayerRegistry<Dtype>::CreateLayer(params[i]));
+}
+
+template <typename Dtype>
 void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   const vector<Blob<Dtype>*>& top)
 {
@@ -58,13 +100,154 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   CHECK_GT(bottleneck_rate_, 0) << "Bottleneck rate should be at least 1";
 
   generataeLayerParamsForBlock();
+
+  need_propagate_down_.resize(1, true);
+
+  // create internal layer instances
+  createLayers(bn_params_, bn_layers_);
+  createLayers(scale_params_, scale_layers_);
+  createLayers(relu_params_, relu_layers_);
+  createLayers(conv3x3_params_, conv3x3_layers_);
+  
+  if (use_dropout_)
+    createLayers(dropout_params_, dropout_layers_);
+  
+  if (use_bottleneck_)
+  {
+    createLayers(bottle_bn_params_, bottle_relu_layers_);
+    createLayers(bottle_scale_params_, bottle_scale_layers_);
+    createLayers(bottle_relu_params_, bottle_relu_layers_);
+    createLayers(conv1x1_params_, conv1x1_layers_);
+  }
+
+  pre_bn_layer_ = LayerRegistry<Dtype>::CreateLayer(pre_bn_param_);
+  post_scale_layer_ = LayerRegistry<Dtype>::CreateLayer(post_scale_param_);
+  post_relu_layer_ = LayerRegistry<Dtype>::CreateLayer(post_relu_param_);
+
+  if (use_bottleneck_)
+    bottleneck_inter_.resize(num_layers_);
+  conv3x3_inter_.resize(num_layers_);
+  input_lth_.resize(num_layers_);
+  output_lth_.resize(num_layers_);
+
+  // invoke LayerSetUp for every internal layer
+  vector<shared_ptr<Blob<Dtype> > >& expect_blobs(expect_blobs_);
+  pre_bn_layer_->LayerSetUp(top, bottom);
+  {
+    append_back(expect_blobs, pre_bn_layer_->blobs());
+    logLayerBlobs(pre_bn_layer_, pre_bn_param_);
+  }
+  
+  for (int l = 0; l < num_layers_; l++)
+  {
+    input_lth_[l].reset(new Blob<Dtype>);
+    conv3x3_inter_[l].reset(new Blob<Dtype>);
+    output_lth_[l].reset(new Blob<Dtype>);
+    vector<Blob<Dtype>*> the_input_lth(1, input_lth_[l].get());
+    vector<Blob<Dtype>*> the_conv3x3_inter_l(1, conv3x3_inter_[l].get());
+    vector<Blob<Dtype>*> the_output_lth(1, output_lth_[l].get());
+
+    if (use_bottleneck_)
+    {
+      bottleneck_inter_[l].reset(new Blob<Dtype>);
+      vector<Blob<Dtype>*> the_bottleneck_inter_l(1, bottleneck_inter_[l].get());
+      
+      bottle_scale_layers_[l]->LayerSetUp(the_input_lth, the_conv3x3_inter_l);
+      bottle_relu_layers_[l]->LayerSetUp(the_conv3x3_inter_l, the_conv3x3_inter_l);
+      {
+        append_back(expect_blobs, bottle_scale_layers_[l]->blobs());
+        logLayerBlobs(bottle_scale_layers_[l], bottle_scale_params_[l]);
+        append_back(expect_blobs, bottle_relu_layers_[l]->blobs());
+        logLayerBlobs(bottle_relu_layers_[l], bottle_relu_params_[l]);
+      }
+      
+      conv1x1_layers_[l]->LayerSetUp(the_conv3x3_inter_l, the_bottleneck_inter_l);
+      bottle_bn_layers_[l]->LayerSetUp(the_bottleneck_inter_l, the_bottleneck_inter_l);
+      scale_layers_[l]->LayerSetUp(the_bottleneck_inter_l, the_bottleneck_inter_l);
+      relu_layers_[l]->LayerSetUp(the_bottleneck_inter_l, the_bottleneck_inter_l);
+      {
+        append_back(expect_blobs, conv1x1_layers_[l]->blobs());
+        logLayerBlobs(conv1x1_layers_[l], conv1x1_params_[l]);
+        append_back(expect_blobs, bottle_bn_layers_[l]->blobs());
+        logLayerBlobs(bottle_bn_layers_[l], bottle_bn_params_[l]);
+        append_back(expect_blobs, scale_layers_[l]->blobs());
+        logLayerBlobs(scale_layers_[l], scale_params_[l]);
+        append_back(expect_blobs, relu_layers_[l]->blobs());
+        logLayerBlobs(relu_layers_[l], relu_params_[l]);
+      }
+
+      conv3x3_layers_[l]->LayerSetUp(the_bottleneck_inter_l, the_output_lth);
+      {
+        append_back(expect_blobs, conv3x3_layers_[l]->blobs());
+        logLayerBlobs(conv3x3_layers_[l], conv3x3_params_[l]);
+      }
+    }
+    else
+    {
+      scale_layers_[l]->LayerSetUp(the_input_lth, the_conv3x3_inter_l);
+      relu_layers_[l]->LayerSetUp(the_conv3x3_inter_l, the_conv3x3_inter_l);
+      {
+        append_back(expect_blobs, scale_layers_[l]->blobs());
+        logLayerBlobs(scale_layers_[l], scale_params_[l]);
+        append_back(expect_blobs, relu_layers_[l]->blobs());
+        logLayerBlobs(relu_layers_[l], relu_params_[l]);
+      }
+
+      conv3x3_layers_[l]->LayerSetUp(the_conv3x3_inter_l, the_output_lth);
+      {
+        append_back(expect_blobs, conv3x3_layers_[l]->blobs());
+        logLayerBlobs(conv3x3_layers_[l], conv3x3_params_[l]);
+      }
+    }
+    
+    if (use_dropout_)
+    {
+      dropout_layers_[l]->LayerSetUp(the_output_lth, the_output_lth);
+      append_back(expect_blobs, dropout_layers_[l]->blobs());
+      logLayerBlobs(dropout_layers_[l], dropout_params_[l]);
+    }
+
+    bn_layers_[l]->LayerSetUp(the_output_lth, the_output_lth);
+    {
+      append_back(expect_blobs, bn_layers_[l]->blobs());
+      logLayerBlobs(bn_layers_[l], bn_params_[l]);
+    }
+
+  }
+
+  post_scale_layer_->LayerSetUp(bottom, bottom);
+  post_relu_layer_->LayerSetUp(bottom, bottom);
+  {
+    append_back(expect_blobs, post_scale_layer_->blobs());
+    logLayerBlobs(post_scale_layer_, post_scale_param_);
+    append_back(expect_blobs, post_relu_layer_->blobs());
+    logLayerBlobs(post_relu_layer_, post_relu_param_);
+  }
+
+  LOG(INFO) << "expect_blobs.size = " << expect_blobs.size();
+  if (this->blobs().size() == 0)
+  {
+    // random initialize, assign pointer to internal layer.blobs() 
+    // to this->blobs()
+    append_back(this->blobs_, expect_blobs);
+    expect_blobs.clear();
+  }
+  else
+  {
+    // copy the parameters into internel layer.blobs() and 
+    // replace pointer in this->blobs() with the ones of internal layers.
+    CHECK_EQ(expect_blobs.size(), this->blobs().size())
+      << "number of paramster blobs does not match the expectation";
+    // Size Check and Data Copy will be done in Reshape
+  }
+
 }
 
 template <typename Dtype>
 void DenseBlockLayer<Dtype>::convertToPlainLayers(vector<LayerParameter>& layer_params)
 {
   layer_params.clear();
-  layer_params.push_back(pre_bn_param);
+  layer_params.push_back(pre_bn_param_);
   for (int l = 0; l < num_layers_; l++)
   {
     
@@ -88,8 +271,8 @@ void DenseBlockLayer<Dtype>::convertToPlainLayers(vector<LayerParameter>& layer_
     layer_params.push_back(LayerParameter(bn_params_[l]));
     layer_params.push_back(LayerParameter(concat_params_[l]));
   }
-  layer_params.push_back(post_scale_param);
-  layer_params.push_back(post_relu_param);
+  layer_params.push_back(post_scale_param_);
+  layer_params.push_back(post_relu_param_);
 
   for (size_t i = 0; i < layer_params.size(); i++)
     layer_params[i].clear_phase();
@@ -174,8 +357,8 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
   std::string prefix = param_.name();
   std::string previous_feature_name = param_.bottom(0);
 
-  pre_bn_param.CopyFrom(bn_param_tpl);
-  previous_feature_name = add_layer(previous_feature_name, pre_bn_param, "pre_bn", false);
+  pre_bn_param_.CopyFrom(bn_param_tpl);
+  previous_feature_name = add_layer(previous_feature_name, pre_bn_param_, "pre_bn", false);
 
   for (int l = 0; l < num_layers_; l++)
   {
@@ -214,10 +397,10 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
   }
   
   concat_params_.back().set_top(0, param_.top(0));
-  post_scale_param.CopyFrom(scale_param_tpl);
-  add_layer(concat_params_.back().top(0), post_scale_param, "post_scale", true);
-  post_relu_param.CopyFrom(relu_param_tpl);
-  add_layer(post_scale_param.top(0), post_relu_param, "post_relu", true);
+  post_scale_param_.CopyFrom(scale_param_tpl);
+  add_layer(concat_params_.back().top(0), post_scale_param_, "post_scale", true);
+  post_relu_param_.CopyFrom(relu_param_tpl);
+  add_layer(post_scale_param_.top(0), post_relu_param_, "post_relu", true);
 
 }
 
