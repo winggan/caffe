@@ -114,7 +114,7 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   
   if (use_bottleneck_)
   {
-    createLayers(bottle_bn_params_, bottle_relu_layers_);
+    createLayers(bottle_bn_params_, bottle_bn_layers_);
     createLayers(bottle_scale_params_, bottle_scale_layers_);
     createLayers(bottle_relu_params_, bottle_relu_layers_);
     createLayers(conv1x1_params_, conv1x1_layers_);
@@ -141,7 +141,7 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
 
   // Reshape is more like to adjust H and W in CNN case, maybe N.
   // In fact BatchNorm needs the bottom shape in LayerSetUp (see batch_norm_layer.cpp)
-  setupShapeForInternalBlobs(bottom);
+  setupShapeForInternalBlobs(bottom[0]);
 
   // invoke LayerSetUp for every internal layer
   vector<shared_ptr<Blob<Dtype> > >& expect_blobs(expect_blobs_);
