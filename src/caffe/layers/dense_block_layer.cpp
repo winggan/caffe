@@ -224,8 +224,10 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
 
   }
 
-  post_scale_layer_->LayerSetUp(top, top);
-  post_relu_layer_->LayerSetUp(top, top);
+  Blob<Dtype> tmp_top;
+  tmp_top.ReshapeLike(maps_diff_); // we should not modify "top" here
+  post_scale_layer_->LayerSetUp(vector<Blob<Dtype>*>(1, &tmp_top), vector<Blob<Dtype>*>(1, &tmp_top));
+  post_relu_layer_->LayerSetUp(vector<Blob<Dtype>*>(1, &tmp_top), vector<Blob<Dtype>*>(1, &tmp_top));
   {
     append_back(expect_blobs, post_scale_layer_->blobs());
     logLayerBlobs(post_scale_layer_, post_scale_param_);
