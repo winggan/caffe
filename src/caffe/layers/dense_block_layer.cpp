@@ -129,10 +129,23 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   conv3x3_inter_.resize(num_layers_);
   input_lth_.resize(num_layers_);
   output_lth_.resize(num_layers_);
+  
+  for (int l = 0; l < num_layers_; l++)
+  {
+    input_lth_[l].reset(new Blob<Dtype>);
+    conv3x3_inter_[l].reset(new Blob<Dtype>);
+    output_lth_[l].reset(new Blob<Dtype>);
+    if (use_bottleneck_)
+      bottleneck_inter_[l].reset(new Blob<Dtype>);
+  }
+
+  // Reshape is more like to adjust H and W in CNN case, maybe N.
+  // In fact BatchNorm needs the bottom shape in LayerSetUp (see batch_norm_layer.cpp)
+  setupShapeForInternalBlobs(bottom);
 
   // invoke LayerSetUp for every internal layer
   vector<shared_ptr<Blob<Dtype> > >& expect_blobs(expect_blobs_);
-  pre_bn_layer_->LayerSetUp(top, bottom);
+  pre_bn_layer_->LayerSetUp(bottom, top);
   {
     append_back(expect_blobs, pre_bn_layer_->blobs());
     logLayerBlobs(pre_bn_layer_, pre_bn_param_);
@@ -140,16 +153,12 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   
   for (int l = 0; l < num_layers_; l++)
   {
-    input_lth_[l].reset(new Blob<Dtype>);
-    conv3x3_inter_[l].reset(new Blob<Dtype>);
-    output_lth_[l].reset(new Blob<Dtype>);
     vector<Blob<Dtype>*> the_input_lth(1, input_lth_[l].get());
     vector<Blob<Dtype>*> the_conv3x3_inter_l(1, conv3x3_inter_[l].get());
     vector<Blob<Dtype>*> the_output_lth(1, output_lth_[l].get());
 
     if (use_bottleneck_)
     {
-      bottleneck_inter_[l].reset(new Blob<Dtype>);
       vector<Blob<Dtype>*> the_bottleneck_inter_l(1, bottleneck_inter_[l].get());
       
       bottle_scale_layers_[l]->LayerSetUp(the_input_lth, the_conv3x3_inter_l);
@@ -215,8 +224,8 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
 
   }
 
-  post_scale_layer_->LayerSetUp(bottom, bottom);
-  post_relu_layer_->LayerSetUp(bottom, bottom);
+  post_scale_layer_->LayerSetUp(top, top);
+  post_relu_layer_->LayerSetUp(top, top);
   {
     append_back(expect_blobs, post_scale_layer_->blobs());
     logLayerBlobs(post_scale_layer_, post_scale_param_);
@@ -240,6 +249,46 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       << "number of paramster blobs does not match the expectation";
     // Size Check and Data Copy will be done in Reshape
   }
+
+}
+
+template <typename Dtype>
+void DenseBlockLayer<Dtype>::setupShapeForInternalBlobs(const Blob<Dtype>* bottom)
+{
+  // Reshape is more like to adjust H and W in CNN case. 
+  // In fact BatchNorm needs the bottom shape in LayerSetUp (see batch_norm_layer.cpp)
+  // Here we check bottom should at least have N and C
+  // H and W will be set to 1 if not specified
+
+  CHECK_GE(bottom->shape().size(), 2)
+    << "[DenseBlock] Cannot set up layer without knowing bottom shape";
+  CHECK_GT(bottom->count(), 0)
+    << "[DenseBlock] Invalid bottom shape";
+
+  vector<int> btm_shape(bottom->shape());
+  for (size_t i = btm_shape.size(); i < 4; i++)
+    btm_shape.push_back(1);
+
+  vector<int> shape(btm_shape);
+  shape[1] = btm_shape[1] + num_layers_ * growth_rate_;
+  maps_diff_.Reshape(shape);
+
+  conv3x3_inter_mem_.Reshape(shape);
+
+  shape[1] = growth_rate_ * bottleneck_rate_;
+  for (size_t i = 0; i < bottleneck_inter_.size(); i++)
+    bottleneck_inter_[i]->Reshape(shape);
+
+  for (size_t i = 0; i < conv3x3_inter_.size(); i++)
+  {
+    shape[1] = btm_shape[1] + i * growth_rate_;
+    conv3x3_inter_[i]->Reshape(shape);
+    input_lth_[i]->Reshape(shape);
+  }
+  
+  shape[1] = growth_rate_;
+  for (size_t i = 0; i < output_lth_.size(); i++)
+    output_lth_[i]->Reshape(shape);
 
 }
 
