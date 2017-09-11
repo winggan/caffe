@@ -240,7 +240,7 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   {
     // random initialize, assign pointer to internal layer.blobs() 
     // to this->blobs()
-    append_back(this->blobs_, expect_blobs);
+    append_back(this->blobs(), expect_blobs);
     expect_blobs.clear();
   }
   else
@@ -252,6 +252,89 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
     // Size Check and Data Copy will be done in Reshape
   }
 
+}
+
+template <typename Dtype>
+inline static void set_data_cpu(Blob<Dtype>& blob, Dtype* ptr)
+{
+  blob.set_cpu_data(ptr);
+}
+
+template <typename Dtype>
+inline static void set_data_gpu(Blob<Dtype>& blob, Dtype* ptr)
+{
+  blob.set_gpu_data(ptr);
+}
+
+template <typename Dtype>
+inline static void set_diff_cpu(Blob<Dtype>& blob, Dtype* ptr)
+{
+  blob.diff()->set_cpu_data(ptr);
+}
+
+template <typename Dtype>
+inline static void set_diff_gpu(Blob<Dtype>& blob, Dtype* ptr)
+{
+  blob.diff()->set_gpu_data(ptr);
+}
+
+template <typename Dtype>
+void DenseBlockLayer<Dtype>::setupMemoryForInternalBlobs(Blob<Dtype>* bottom, Blob<Dtype>* top)
+{
+  vector<int> input_shape(bottom->shape());
+  const int init_channles = input_shape[1];
+  const int n = input_shape[0];
+  const int h = input_shape[2];
+  const int w = input_shape[3];
+
+  Dtype* maps_diff_diff;
+  Dtype* conv3x3_inter_mem_data;
+  Dtype* conv3x3_inter_mem_diff;
+  Dtype* output_mem_data;
+  Dtype* output_mem_diff;
+
+  if (Caffe::mode() == Caffe::GPU)
+  {
+    maps_diff_diff = maps_diff_.mutable_gpu_diff();
+    conv3x3_inter_mem_data = conv3x3_inter_mem_.mutable_gpu_data();
+    conv3x3_inter_mem_diff = conv3x3_inter_mem_.mutable_gpu_diff();
+    output_mem_data = output_mem_.mutable_gpu_data();
+    output_mem_diff = output_mem_.mutable_gpu_diff();
+  }
+  else
+  {
+    maps_diff_diff = maps_diff_.mutable_cpu_diff();
+    conv3x3_inter_mem_data = conv3x3_inter_mem_.mutable_cpu_data();
+    conv3x3_inter_mem_diff = conv3x3_inter_mem_.mutable_cpu_diff();
+    output_mem_data = output_mem_.mutable_cpu_data();
+    output_mem_diff = output_mem_.mutable_cpu_diff();
+  }
+
+  if (Caffe::mode() == Caffe::GPU)
+    for (size_t i = 0; i < bottleneck_inter_.size(); i++)
+    {
+      bottleneck_inter_[i]->gpu_data();
+      bottleneck_inter_[i]->gpu_diff();
+    }
+  else
+    for (size_t i = 0; i < bottleneck_inter_.size(); i++)
+    {
+      bottleneck_inter_[i]->cpu_data();
+      bottleneck_inter_[i]->cpu_diff();
+    }
+
+  typedef void (*SetFunc)(Blob<Dtype>& blob, Dtype* ptr);
+  SetFunc set_data, set_diff;
+  if (Caffe::mode() == Caffe::GPU)
+  {
+    set_data = set_data_gpu;
+    set_diff = set_diff_gpu;
+  }
+  else
+  {
+    set_data = set_data_cpu;
+    set_diff = set_diff_cpu;
+  }
 }
 
 template <typename Dtype>
@@ -296,6 +379,7 @@ void DenseBlockLayer<Dtype>::setupShapeForInternalBlobs(const Blob<Dtype>* botto
   }
   
   shape[1] = growth_rate_;
+  output_mem_.Reshape(shape);
   for (size_t i = 0; i < output_lth_.size(); i++)
     output_lth_[i]->Reshape(shape);
 
@@ -347,17 +431,20 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
   bn_param_tpl.set_type("BatchNorm");
   bn_param_tpl.clear_dense_block_param();
   bn_param_tpl.clear_param();
+  bn_param_tpl.clear_blobs();
   
   LayerParameter scale_param_tpl(param_);
   scale_param_tpl.set_type("Scale");
   scale_param_tpl.clear_dense_block_param();
   scale_param_tpl.clear_param();
+  scale_param_tpl.clear_blobs();
   scale_param_tpl.mutable_scale_param()->set_bias_term(true);
 
   LayerParameter relu_param_tpl(param_);
   relu_param_tpl.set_type("ReLU");
   relu_param_tpl.clear_dense_block_param();
   relu_param_tpl.clear_param();
+  relu_param_tpl.clear_blobs();
   if (param_.dense_block_param().has_relu_param())
     relu_param_tpl.mutable_relu_param()->CopyFrom(param_.dense_block_param().relu_param());
 
@@ -367,6 +454,7 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
     dropout_param_tpl.set_type("Dropout");
     dropout_param_tpl.clear_dense_block_param();
     dropout_param_tpl.clear_param();
+    dropout_param_tpl.clear_blobs();
     if (param_.dense_block_param().has_dropout_param())
       dropout_param_tpl.mutable_dropout_param()->CopyFrom(param_.dense_block_param().dropout_param());
   }
@@ -375,6 +463,7 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
   conv3x3_param_tpl.set_type("Convolution");
   conv3x3_param_tpl.clear_dense_block_param();
   conv3x3_param_tpl.clear_param();
+  conv3x3_param_tpl.clear_blobs();
   {
     ConvolutionParameter* conv_param = conv3x3_param_tpl.mutable_convolution_param();
     conv_param->add_kernel_size(3);
@@ -394,6 +483,7 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
     conv1x1_param_tpl.set_type("Convolution");
     conv1x1_param_tpl.clear_dense_block_param();
     conv1x1_param_tpl.clear_param();
+    conv1x1_param_tpl.clear_blobs();
     ConvolutionParameter* conv_param = conv1x1_param_tpl.mutable_convolution_param();
     conv_param->add_kernel_size(1);
     conv_param->add_pad(0);
@@ -410,6 +500,7 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
   concat_param_tpl.set_type("Concat");
   concat_param_tpl.clear_dense_block_param();
   concat_param_tpl.clear_param();
+  concat_param_tpl.clear_blobs();
   concat_param_tpl.mutable_concat_param()->set_axis(1);
 
   std::string prefix = param_.name();
@@ -471,10 +562,75 @@ void DenseBlockLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
 
   vector<int> outputShape(bottom[0]->shape());
   CHECK_EQ(outputShape.size(), 4) << "Dense block are designed for 4D (n, c, h, w) tensor";
-  outputShape[1] += num_layers_ * growth_rate_;
-  top[0]->Reshape(outputShape);
 
-  // TODO: setup any other intermediate blob needed by the computation
+  setupShapeForInternalBlobs(bottom[0]);
+  top[0]->ReshapeLike(maps_diff_);
+
+  // invoke Reshape of the internal layers
+  pre_bn_layer_->Reshape(bottom, top);
+
+  for (int l = 0; l < num_layers_; l++)
+  {
+    vector<Blob<Dtype>*> the_input_lth(1, input_lth_[l].get());
+    vector<Blob<Dtype>*> the_conv3x3_inter_l(1, conv3x3_inter_[l].get());
+    vector<Blob<Dtype>*> the_output_lth(1, output_lth_[l].get());
+
+    if (use_bottleneck_)
+    {
+      vector<Blob<Dtype>*> the_bottleneck_inter_l(1, bottleneck_inter_[l].get());
+
+      bottle_scale_layers_[l]->Reshape(the_input_lth, the_conv3x3_inter_l);
+      bottle_relu_layers_[l]->Reshape(the_conv3x3_inter_l, the_conv3x3_inter_l);
+
+      conv1x1_layers_[l]->Reshape(the_conv3x3_inter_l, the_bottleneck_inter_l);
+      bottle_bn_layers_[l]->Reshape(the_bottleneck_inter_l, the_bottleneck_inter_l);
+      scale_layers_[l]->Reshape(the_bottleneck_inter_l, the_bottleneck_inter_l);
+      relu_layers_[l]->Reshape(the_bottleneck_inter_l, the_bottleneck_inter_l);
+
+      conv3x3_layers_[l]->Reshape(the_bottleneck_inter_l, the_output_lth);
+
+    }
+    else
+    {
+      scale_layers_[l]->Reshape(the_input_lth, the_conv3x3_inter_l);
+      relu_layers_[l]->Reshape(the_conv3x3_inter_l, the_conv3x3_inter_l);
+
+      conv3x3_layers_[l]->Reshape(the_conv3x3_inter_l, the_output_lth);
+
+    }
+
+    if (use_dropout_)
+    {
+      dropout_layers_[l]->Reshape(the_output_lth, the_output_lth);
+    }
+
+    bn_layers_[l]->Reshape(the_output_lth, the_output_lth);
+
+  }
+
+  post_scale_layer_->Reshape(top, top);
+  post_relu_layer_->Reshape(top, top);
+
+  setupMemoryForInternalBlobs(bottom[0], top[0]);
+
+  if (expect_blobs_.size() > 0)
+  { // if there are parameters to be copied into working parameter blobs
+    // now this->blob() has the parameters to be copied
+    // expect_blobs_ stores the pointers to the working parameter blobs
+
+    LOG(INFO) << "[DenseBlock] Copying trained parameters from LayerParamter";
+    // check shape and copy
+    for (size_t i = 0; i < expect_blobs_.size(); i++)
+    {
+      CHECK(this->blobs()[i]->shape() == expect_blobs_[i]->shape())
+        << "parameter blobs does not match the expectation at " << i;
+      caffe_copy(this->blobs()[i]->count(), this->blobs()[i]->cpu_data(), expect_blobs_[i]->mutable_cpu_data());
+    }
+    this->blobs().clear();
+    append_back(this->blobs(), expect_blobs_);
+    expect_blobs_.clear();
+  }
+
 }
 
 template <typename Dtype>

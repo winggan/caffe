@@ -32,6 +32,7 @@ class DenseBlockLayer : public Layer<Dtype>
   
   void generataeLayerParamsForBlock();
   void setupShapeForInternalBlobs(const Blob<Dtype>* bottom);
+  void setupMemoryForInternalBlobs(Blob<Dtype>* bottom, Blob<Dtype>* top);
 
   virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top);
@@ -68,6 +69,7 @@ class DenseBlockLayer : public Layer<Dtype>
   Blob<Dtype> conv3x3_inter_mem_; // size = n * (k0 + k*(L-1)) * h * w
   vector<shared_ptr<Blob<Dtype> > > bottleneck_inter_; // one for each conv3x3 block if use bottleneck
                                           // all are with the same size n * (bottleneck_rate*k) * h * w
+  Blob<Dtype> output_mem_; // size = n * k * h * w, concat is needed after each conv block produce output.
 
   // the following blob are only headers without actually memory allocation
   vector<shared_ptr<Blob<Dtype> > > conv3x3_inter_; // one for each conv3x3 block to store its input (after scale)
@@ -75,7 +77,7 @@ class DenseBlockLayer : public Layer<Dtype>
                                                     // ReLU.Backward needs its input data, which will be computed again at 
                                                     // backward procedure (a Scale.Forward)
   vector<shared_ptr<Blob<Dtype> > > input_lth_;  // input for l-th conv block, size = n * (k0 + k*(l-1)) * h * w, shared from top[0]
-  vector<shared_ptr<Blob<Dtype> > > output_lth_; // output for l-th conv block, size = n * k * h * w, shared from top[0]
+  vector<shared_ptr<Blob<Dtype> > > output_lth_; // output for l-th conv block, size = n * k * h * w, shared from output_mem_
 
   
 
