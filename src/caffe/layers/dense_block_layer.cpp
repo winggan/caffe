@@ -654,8 +654,13 @@ void DenseBlockLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
   top[0]->ReshapeLike(maps_diff_);
 
   // invoke Reshape of the internal layers
-  pre_bn_layer_->Reshape(bottom, top);
-
+  {
+    vector<int> tmp_shape(input_lth_[0]->shape());
+    pre_bn_layer_->Reshape(bottom, vector<Blob<Dtype>*>(1, input_lth_[0].get()) );
+    CHECK_EQ(input_lth_[0]->shape() == tmp_shape)
+      << "[DenseBlock] Reshape error in pre_bn_layer_";
+  }
+  
   for (int l = 0; l < num_layers_; l++)
   {
     vector<Blob<Dtype>*> the_input_lth(1, input_lth_[l].get());
@@ -724,7 +729,70 @@ template <typename Dtype>
 void DenseBlockLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
   const vector<Blob<Dtype>*>& top)
 {
-  NOT_IMPLEMENTED;
+  
+  const vector<int> shape(bottom[0]->shape());
+  const int n = shape[0];
+  const int k0= shape[1];
+  const int h = shape[2];
+  const int w = shape[3];
+  
+  CHECK_EQ(k0 + num_layers_ * growth_rate_, top[0]->shape()[1])
+    << "Invalid top shape according to k0 + num_layers_ * growth_rate_";
+  
+  pre_bn_layer_->Forward_cpu(bottom, vector<Blob<Dtype>*>(1, input_lth_[0].get()) );
+  
+  for (int l = 0; l < num_layers_; l ++)
+  {
+    vector<Blob<Dtype>*> the_input_lth(1, input_lth_[l].get());
+    vector<Blob<Dtype>*> the_conv3x3_inter_l(1, conv3x3_inter_[l].get());
+    vector<Blob<Dtype>*> the_output_lth(1, output_lth_[l].get());
+    
+    if (use_bottleneck_)
+    {
+      vector<Blob<Dtype>*> the_bottleneck_inter_l(1, bottleneck_inter_[l].get());
+      
+      bottle_scale_layers_[l]->Forward_cpu(the_input_lth, the_conv3x3_inter_l);
+      // (in gpu) async "assemble" (original part) can start here to prepare for next conv block
+      bottle_relu_layers_[l]->Forward_cpu(the_conv3x3_inter_l, the_conv3x3_inter_l);
+
+      conv1x1_layers_[l]->Forward_cpu(the_conv3x3_inter_l, the_bottleneck_inter_l);
+      bottle_bn_layers_[l]->Forward_cpu(the_bottleneck_inter_l, the_bottleneck_inter_l);
+      scale_layers_[l]->Forward_cpu(the_bottleneck_inter_l, the_bottleneck_inter_l);
+      relu_layers_[l]->Forward_cpu(the_bottleneck_inter_l, the_bottleneck_inter_l);
+
+      conv3x3_layers_[l]->Forward_cpu(the_bottleneck_inter_l, the_output_lth);
+      
+    }
+    else
+    {
+      scale_layers_[l]->Forward_cpu(the_input_lth, the_conv3x3_inter_l);
+      relu_layers_[l]->Forward_cpu(the_conv3x3_inter_l, the_conv3x3_inter_l);
+
+      conv3x3_layers_[l]->Forward_cpu(the_conv3x3_inter_l, the_output_lth);
+      
+    }
+    
+    if (use_dropout_)
+    {
+      dropout_layers_[l]->Forward_cpu(the_output_lth, the_output_lth);
+    }
+
+    bn_layers_[l]->Forward_cpu(the_output_lth, the_output_lth);
+    
+    // (in gpu) start async "assemble" (adding part) for this conv block
+    assemble_maps(n, h, w, k0 + l * growth_rate_, growth_rate_, 
+                  top[0]->mutable_cpu_data(), output_lth_[l]->cpu_data());
+    
+    // (in gpu) synchronize "assemble" here so we can start next conv block
+  }
+  
+  // store top[0]->data() (before post_scale), which will be used in 
+  // backward of the input scale of each conv block
+  caffe_copy(top[0]->count(), top[0]->cpu_data(), maps_diff_.mutable_cpu_data());
+  
+  post_scale_layer_->Forward_cpu(top, top);
+  post_relu_layer_->Forward_cpu(top, top);
+  
 }
 
 template <typename Dtype>
@@ -732,6 +800,20 @@ void DenseBlockLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom)
 {
   NOT_IMPLEMENTED;
+  const vector<int> shape(top[0]->shape());
+  const int n = shape[0];
+  const int k0= shape[1] - num_layers_ * growth_rate_;
+  const int h = shape[2];
+  const int w = shape[3];
+  
+  CHECK_EQ(k0, bottom[0]->shape()[1])
+    << "Invalid top shape according to k0 + num_layers_ * growth_rate_";
+    
+  post_relu_layer_->Backward_cpu(top, top);
+  post_scale_layer_->Backward_cpu(top, top);
+  
+  
+    
 }
 
 INSTANTIATE_CLASS(DenseBlockLayer);
