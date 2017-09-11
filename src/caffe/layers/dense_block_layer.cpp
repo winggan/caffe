@@ -32,6 +32,69 @@ static void reshapeC(Blob<Dtype> &blob, int c)
   }
 }
 
+template <typename Dtype>
+static void assemble_maps(const int n, const int h, const int w, const int c0, const int c_add,
+                          Dtype* dst, const Dtype* new_map)
+{
+  // c0 = #feature-maps BEFORE assemble
+  // c_add = #feature-maps to be added
+  const int c1 = c0 + c_add;
+  const int c_stride = h * w;
+  const int src_stride = c0 * c_stride;
+  const int dst_stride = c1 * c_stride;
+  const int new_stride = c_add * c_stride;
+  
+  const Dtype* new_map_ptr = new_map + (n - 1) * new_stride;
+  const Dtype *src_ptr = dst + (n - 1) * src_stride;
+  Dtype *dst_ptr = dst + (n - 1) * dst_stride;
+  Dtype *dst_ptr_for_new = dst_ptr + src_stride;
+  
+  const int src_count = c0 * c_stride;
+  const int new_count = c_add * c_stride;
+  
+  for (int i = n - 1; i >= 0; i --, 
+    new_map_ptr -= new_stride, 
+    src_ptr     -= src_stride,
+    dst_ptr     -= dst_stride,
+    dst_ptr_for_new -= dst_stride)
+  {
+    caffe_copy(src_count, src_ptr, dst_ptr);
+    caffe_copy(new_count, new_map_ptr, dst_ptr_for_new);  
+  }
+  
+}
+
+template <typename Dtype>
+static void disassemble_maps(const int n, const int h, const int w, const int c0, const int c_add,
+                             Dtype* src, Dtype* out_map)
+{
+  // c0 = #feature-maps AFTER disassemble
+  // c_add = #feature-maps in out_map
+  const int c1 = c0 + c_add;
+  const int c_stride = h * w;
+  const int src_stride = c1 * c_stride;
+  const int dst_stride = c0 * c_stride;
+  const int out_stride = c_add * c_stride;
+  
+  Dtype* out_map_ptr = out_map;
+  Dtype *dst_ptr = src;
+  const Dtype *src_ptr = src;
+  const Dtype *src_ptr_for_out = src_ptr + dst_stride;
+  
+  const int dst_count = c0 * c_stride;
+  const int out_count = c_add * c_stride;
+  
+  for (int i = 0; i < n; i ++,
+    out_map_ptr += out_stride,
+    dst_ptr     += dst_stride,
+    src_ptr     += src_stride,
+    src_ptr_for_out += src_stride)
+  {
+    caffe_copy(out_count, src_ptr_for_out, out_map_ptr);
+    caffe_copy(dst_count, src_ptr, dst_ptr);
+  }
+}
+
 template <typename T>
 inline static void append_back(vector<T> &dst, const vector<T> &src)
 {
@@ -292,6 +355,8 @@ void DenseBlockLayer<Dtype>::setupMemoryForInternalBlobs(Blob<Dtype>* bottom, Bl
   Dtype* conv3x3_inter_mem_diff;
   Dtype* output_mem_data;
   Dtype* output_mem_diff;
+  Dtype* top0_data;
+  Dtype* top0_diff;
 
   if (Caffe::mode() == Caffe::GPU)
   {
@@ -300,6 +365,8 @@ void DenseBlockLayer<Dtype>::setupMemoryForInternalBlobs(Blob<Dtype>* bottom, Bl
     conv3x3_inter_mem_diff = conv3x3_inter_mem_.mutable_gpu_diff();
     output_mem_data = output_mem_.mutable_gpu_data();
     output_mem_diff = output_mem_.mutable_gpu_diff();
+    top0_data = top->mutable_gpu_data();
+    top0_diff = top->mutable_gpu_diff();
   }
   else
   {
@@ -308,6 +375,8 @@ void DenseBlockLayer<Dtype>::setupMemoryForInternalBlobs(Blob<Dtype>* bottom, Bl
     conv3x3_inter_mem_diff = conv3x3_inter_mem_.mutable_cpu_diff();
     output_mem_data = output_mem_.mutable_cpu_data();
     output_mem_diff = output_mem_.mutable_cpu_diff();
+    top0_data = top->mutable_cpu_data();
+    top0_diff = top->mutable_cpu_diff();
   }
 
   if (Caffe::mode() == Caffe::GPU)
@@ -334,6 +403,24 @@ void DenseBlockLayer<Dtype>::setupMemoryForInternalBlobs(Blob<Dtype>* bottom, Bl
   {
     set_data = set_data_cpu;
     set_diff = set_diff_cpu;
+  }
+  
+  for (size_t l = 0; l < output_lth_.size(); l++)
+  {
+    set_data(*(output_lth_[l].get()), output_mem_data);
+    set_diff(*(output_lth_[l].get()), output_mem_diff);
+  }
+  
+  for (size_t l = 0; l < input_lth_.size(); l ++)
+  {
+    set_data(*(input_lth_[l].get()), top0_data);
+    set_diff(*(input_lth_[l].get()), top0_diff);
+  }
+  
+  for (size_t l = 0; l < conv3x3_inter_.size(); l ++)
+  {
+    set_data(*(conv3x3_inter_[l].get()), conv3x3_inter_mem_data);
+    set_diff(*(conv3x3_inter_[l].get()), conv3x3_inter_mem_diff);
   }
 }
 
