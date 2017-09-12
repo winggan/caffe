@@ -344,45 +344,45 @@ inline static void set_diff_gpu(Blob<Dtype>& blob, Dtype* ptr)
 template <typename Dtype>
 void DenseBlockLayer<Dtype>::setupMemoryForInternalBlobs(Blob<Dtype>* bottom, Blob<Dtype>* top)
 {
-  vector<int> input_shape(bottom->shape());
-  const int init_channles = input_shape[1];
-  const int n = input_shape[0];
-  const int h = input_shape[2];
-  const int w = input_shape[3];
+  //vector<int> input_shape(bottom->shape());
+  //const int init_channles = input_shape[1];
+  //const int n = input_shape[0];
+  //const int h = input_shape[2];
+  //const int w = input_shape[3];
 
   Dtype* maps_diff_data;
-  Dtype* maps_diff_diff;
+  //Dtype* maps_diff_diff;
   Dtype* tmp_diff_diff;
   Dtype* conv3x3_inter_mem_data;
   Dtype* conv3x3_inter_mem_diff;
   Dtype* output_mem_data;
   Dtype* output_mem_diff;
-  Dtype* top0_data;
-  Dtype* top0_diff;
+  //Dtype* top0_data;
+  //Dtype* top0_diff;
 
   if (Caffe::mode() == Caffe::GPU)
   {
     maps_diff_data = maps_diff_.mutable_gpu_data();
-    maps_diff_diff = maps_diff_.mutable_gpu_diff();
+    /*maps_diff_diff =*/ maps_diff_.mutable_gpu_diff();
     tmp_diff_diff = tmp_diff_.mutable_gpu_diff();
     conv3x3_inter_mem_data = conv3x3_inter_mem_.mutable_gpu_data();
     conv3x3_inter_mem_diff = conv3x3_inter_mem_.mutable_gpu_diff();
     output_mem_data = output_mem_.mutable_gpu_data();
     output_mem_diff = output_mem_.mutable_gpu_diff();
-    top0_data = top->mutable_gpu_data();
-    top0_diff = top->mutable_gpu_diff();
+    /*top0_data =*/ top->mutable_gpu_data();
+    /*top0_diff =*/ top->mutable_gpu_diff();
   }
   else
   {
     maps_diff_data = maps_diff_.mutable_cpu_data();
-    maps_diff_diff = maps_diff_.mutable_cpu_diff();
+    /*maps_diff_diff =*/ maps_diff_.mutable_cpu_diff();
     tmp_diff_diff = tmp_diff_.mutable_cpu_diff();
     conv3x3_inter_mem_data = conv3x3_inter_mem_.mutable_cpu_data();
     conv3x3_inter_mem_diff = conv3x3_inter_mem_.mutable_cpu_diff();
     output_mem_data = output_mem_.mutable_cpu_data();
     output_mem_diff = output_mem_.mutable_cpu_diff();
-    top0_data = top->mutable_cpu_data();
-    top0_diff = top->mutable_cpu_diff();
+    /*top0_data =*/ top->mutable_cpu_data();
+    /*top0_diff =*/ top->mutable_cpu_diff();
   }
 
   if (Caffe::mode() == Caffe::GPU)
