@@ -44,6 +44,7 @@ class DenseBlockLayer : public Layer<Dtype>
   virtual void Backward_gpu(const vector<Blob<Dtype>*>& top,
     const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom);
 
+ public: // for debug
 
   int num_layers_;
   int growth_rate_;

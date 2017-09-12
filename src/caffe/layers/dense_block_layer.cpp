@@ -639,9 +639,9 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
     previous_feature_name = add_concat_layer(previous_feature_name, blob, concat_params_.back(), "concat_" + the_num);
   }
   
-  concat_params_.back().set_top(0, param_.top(0));
   post_scale_param_.CopyFrom(scale_param_tpl);
-  add_layer(concat_params_.back().top(0), post_scale_param_, "post_scale", true);
+  add_layer(concat_params_.back().top(0), post_scale_param_, "post_scale", false);
+  post_scale_param_.set_top(0, param_.top(0));
   post_relu_param_.CopyFrom(relu_param_tpl);
   add_layer(post_scale_param_.top(0), post_relu_param_, "post_relu", true);
 
