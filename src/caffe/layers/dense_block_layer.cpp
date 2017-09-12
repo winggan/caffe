@@ -289,7 +289,7 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
 
   Blob<Dtype> tmp_top;
   tmp_top.ReshapeLike(maps_diff_); // we should not modify "top" here
-  post_scale_layer_->LayerSetUp(vector<Blob<Dtype>*>(1, &tmp_top), vector<Blob<Dtype>*>(1, &tmp_top));
+  post_scale_layer_->LayerSetUp(vector<Blob<Dtype>*>(1, &maps_diff_), vector<Blob<Dtype>*>(1, &tmp_top));
   post_relu_layer_->LayerSetUp(vector<Blob<Dtype>*>(1, &tmp_top), vector<Blob<Dtype>*>(1, &tmp_top));
   {
     append_back(expect_blobs, post_scale_layer_->blobs());
@@ -350,7 +350,9 @@ void DenseBlockLayer<Dtype>::setupMemoryForInternalBlobs(Blob<Dtype>* bottom, Bl
   const int h = input_shape[2];
   const int w = input_shape[3];
 
+  Dtype* maps_diff_data;
   Dtype* maps_diff_diff;
+  Dtype* tmp_diff_diff;
   Dtype* conv3x3_inter_mem_data;
   Dtype* conv3x3_inter_mem_diff;
   Dtype* output_mem_data;
@@ -360,7 +362,9 @@ void DenseBlockLayer<Dtype>::setupMemoryForInternalBlobs(Blob<Dtype>* bottom, Bl
 
   if (Caffe::mode() == Caffe::GPU)
   {
+    maps_diff_data = maps_diff_.mutable_gpu_data();
     maps_diff_diff = maps_diff_.mutable_gpu_diff();
+    tmp_diff_diff = tmp_diff_.mutable_gpu_diff();
     conv3x3_inter_mem_data = conv3x3_inter_mem_.mutable_gpu_data();
     conv3x3_inter_mem_diff = conv3x3_inter_mem_.mutable_gpu_diff();
     output_mem_data = output_mem_.mutable_gpu_data();
@@ -370,7 +374,9 @@ void DenseBlockLayer<Dtype>::setupMemoryForInternalBlobs(Blob<Dtype>* bottom, Bl
   }
   else
   {
+    maps_diff_data = maps_diff_.mutable_cpu_data();
     maps_diff_diff = maps_diff_.mutable_cpu_diff();
+    tmp_diff_diff = tmp_diff_.mutable_cpu_diff();
     conv3x3_inter_mem_data = conv3x3_inter_mem_.mutable_cpu_data();
     conv3x3_inter_mem_diff = conv3x3_inter_mem_.mutable_cpu_diff();
     output_mem_data = output_mem_.mutable_cpu_data();
@@ -413,8 +419,8 @@ void DenseBlockLayer<Dtype>::setupMemoryForInternalBlobs(Blob<Dtype>* bottom, Bl
   
   for (size_t l = 0; l < input_lth_.size(); l ++)
   {
-    set_data(*(input_lth_[l].get()), top0_data);
-    set_diff(*(input_lth_[l].get()), top0_diff);
+    set_data(*(input_lth_[l].get()), maps_diff_data);
+    set_diff(*(input_lth_[l].get()), tmp_diff_diff);
   }
   
   for (size_t l = 0; l < conv3x3_inter_.size(); l ++)
@@ -451,6 +457,7 @@ void DenseBlockLayer<Dtype>::setupShapeForInternalBlobs(const Blob<Dtype>* botto
   vector<int> shape(btm_shape);
   shape[1] = btm_shape[1] + num_layers_ * growth_rate_;
   maps_diff_.Reshape(shape);
+  tmp_diff_.Reshape(shape);
 
   conv3x3_inter_mem_.Reshape(shape);
 
@@ -700,7 +707,7 @@ void DenseBlockLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
 
   }
 
-  post_scale_layer_->Reshape(top, top);
+  post_scale_layer_->Reshape(vector<Blob<Dtype>*>(1, &maps_diff_), top);
   post_relu_layer_->Reshape(top, top);
 
   setupMemoryForInternalBlobs(bottom[0], top[0]);
@@ -766,6 +773,7 @@ void DenseBlockLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     else
     {
       scale_layers_[l]->Forward_cpu(the_input_lth, the_conv3x3_inter_l);
+      // (in gpu) async "assemble" (original part) can start here to prepare for next conv block
       relu_layers_[l]->Forward_cpu(the_conv3x3_inter_l, the_conv3x3_inter_l);
 
       conv3x3_layers_[l]->Forward_cpu(the_conv3x3_inter_l, the_output_lth);
@@ -781,16 +789,15 @@ void DenseBlockLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     
     // (in gpu) start async "assemble" (adding part) for this conv block
     assemble_maps(n, h, w, k0 + l * growth_rate_, growth_rate_, 
-                  top[0]->mutable_cpu_data(), output_lth_[l]->cpu_data());
+                  maps_diff_.mutable_cpu_data(), output_lth_[l]->cpu_data());
     
     // (in gpu) synchronize "assemble" here so we can start next conv block
   }
   
-  // store top[0]->data() (before post_scale), which will be used in 
-  // backward of the input scale of each conv block
-  caffe_copy(top[0]->count(), top[0]->cpu_data(), maps_diff_.mutable_cpu_data());
+  // maps_diff_.data() store the output data (before post_scale_layer_), 
+  //which will be used in backward of the input scale of each conv block
   
-  post_scale_layer_->Forward_cpu(top, top);
+  post_scale_layer_->Forward_cpu(vector<Blob<Dtype>*>(1, &maps_diff_), top);
   post_relu_layer_->Forward_cpu(top, top);
   
 }
@@ -799,7 +806,7 @@ template <typename Dtype>
 void DenseBlockLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom)
 {
-  NOT_IMPLEMENTED;
+
   const vector<int> shape(top[0]->shape());
   const int n = shape[0];
   const int k0= shape[1] - num_layers_ * growth_rate_;
@@ -809,10 +816,95 @@ void DenseBlockLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   CHECK_EQ(k0, bottom[0]->shape()[1])
     << "Invalid top shape according to k0 + num_layers_ * growth_rate_";
     
-  post_relu_layer_->Backward_cpu(top, top);
-  post_scale_layer_->Backward_cpu(top, top);
+  post_relu_layer_->Backward_cpu(top, need_propagate_down_, top);
+  post_scale_layer_->Backward_cpu(top, need_propagate_down_, vector<Blob<Dtype>*>(1, &maps_diff_));
   
+  for (int l = num_layers_ - 1; l >= 0 ; l --)
+  {
+    vector<Blob<Dtype>*> the_input_lth(1, input_lth_[l].get());
+    vector<Blob<Dtype>*> the_conv3x3_inter_l(1, conv3x3_inter_[l].get());
+    vector<Blob<Dtype>*> the_output_lth(1, output_lth_[l].get());
+    
+    // diff and data, each use a individual stream
+    // (in gpu) start async "disassemble" (adding part) for this conv block
+    disassemble_maps(n, h, w, k0 + l * growth_rate_, growth_rate_, 
+                     maps_diff_.mutable_cpu_data(), output_lth_[l]->mutable_cpu_data());
+    disassemble_maps(n, h, w, k0 + l * growth_rate_, growth_rate_, 
+                     maps_diff_.mutable_cpu_diff(), output_lth_[l]->mutable_cpu_diff());
+    
+    // (in gpu) synchronize "disassemble" (adding part) here so we can start the 
+    // Backward for the conv block
+    
+    // (in gpu) start async "disassemble" (original part) to prepare for Backward of 
+    // earlier conv in the conv block
+    
+    bn_layers_[l]->Backward_cpu(the_output_lth, need_propagate_down_, the_output_lth);
+    
+    if (use_dropout_)
+    {
+      dropout_layers_[l]->Backward_cpu(the_output_lth, need_propagate_down_, the_output_lth);
+    }
+    
+    if (use_bottleneck_)
+    {
+      vector<Blob<Dtype>*> the_bottleneck_inter_l(1, bottleneck_inter_[l].get());
+      
+      conv3x3_layers_[l]->Backward_cpu(the_output_lth, need_propagate_down_, the_bottleneck_inter_l);
+      
+      relu_layers_[l]->Backward_cpu(the_bottleneck_inter_l, need_propagate_down_, the_bottleneck_inter_l);
+      scale_layers_[l]->Backward_cpu(the_bottleneck_inter_l, need_propagate_down_, the_bottleneck_inter_l);
+      bottle_bn_layers_[l]->Backward_cpu(the_bottleneck_inter_l, need_propagate_down_, the_bottleneck_inter_l);
+      
+      // (in gpu) synchronize "disassemble" (original part) so we can continue the preparation 
+      // for Backward of conv3x3 in the conv block
+      
+      // re-calculate the bottom_data of conv1x1 from bottle_scale_layers_[l] and bottle_relu_layers_[l]
+      bottle_scale_layers_[l]->Forward_cpu(the_input_lth, the_conv3x3_inter_l);
+      bottle_relu_layers_[l]->Forward_cpu(the_conv3x3_inter_l, the_conv3x3_inter_l);
+      
+      conv1x1_layers_[l]->Backward_cpu(the_bottleneck_inter_l, need_propagate_down_, the_conv3x3_inter_l);
+      
+      bottle_relu_layers_[l]->Backward_cpu(the_conv3x3_inter_l, need_propagate_down_, the_conv3x3_inter_l);
+      bottle_scale_layers_[l]->Backward_cpu(the_conv3x3_inter_l, need_propagate_down_, the_input_lth);
+    }
+    else
+    {
+      // (in gpu) synchronize "disassemble" (original part) so we can continue the preparation 
+      // for Backward of conv3x3 in the conv block
+      
+      // re-calculate the bottom_data of conv3x3 from scale_layers_[l] and relu_layers_[l]
+      scale_layers_[l]->Forward_cpu(the_input_lth, the_conv3x3_inter_l);
+      relu_layers_[l]->Forward_cpu(the_conv3x3_inter_l, the_conv3x3_inter_l);
+      
+      conv3x3_layers_[l]->Backward_cpu(the_output_lth, need_propagate_down_, the_conv3x3_inter_l);
+      
+      relu_layers_[l]->Backward_cpu(the_conv3x3_inter_l, need_propagate_down_, the_conv3x3_inter_l);
+      scale_layers_[l]->Backward_cpu(the_conv3x3_inter_l, need_propagate_down_, the_input_lth);
+    }
+    
+    { // add the diff together before continue
+      const int count = input_lth_[l]->count();
+      Dtype* target_ptr;
+      const Dtype* adding_in_ptr;
+      if (l > 0)
+      {
+        target_ptr = maps_diff_.mutable_cpu_diff(); 
+        adding_in_ptr = tmp_diff_.cpu_diff(); // diff of input_lth_[l]
+      }
+      else
+      {
+        // for the first conv block, store the sum of diff in tmp_diff_.diff (input_lth_[0].diff)
+        // because pre_bn_layer_ treat input_lth_[0] as the top blob.
+        target_ptr = tmp_diff_.mutable_cpu_diff(); // diff of input_lth_[l]
+        adding_in_ptr = maps_diff_.cpu_diff()
+      }
+      
+      // in gpu caffe_gpu_axpy is used
+      caffe_axpy(count, Dtype(1.), adding_in_ptr, target_ptr);
+    }
+  }
   
+  pre_bn_layer_->Backward_cpu(vector<Blob<Dtype>*>(1, input_lth_[0].get()), need_propagate_down_, bottom);
     
 }
 

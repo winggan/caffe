@@ -63,9 +63,10 @@ class DenseBlockLayer : public Layer<Dtype>
   
   vector<shared_ptr<Blob<Dtype> > > expect_blobs_;
 
-  Blob<Dtype> maps_diff_; // temp space to store the diff of a conv block so it can be added to top[0].diff
-                          // bottom[0].diff is copied from top[0].diff at last
+  Blob<Dtype> tmp_diff_;  // temp space to store the diff of a conv block so it can be added to maps_diff_.diff
                           // same size as top[0]
+  Blob<Dtype> maps_diff_; // shared memory for input_lth_(data), diff store the diff from post_scale_layer_, 
+                          // and used as workspace to summerize diff from all conv block ("y" of the axpy)
   Blob<Dtype> conv3x3_inter_mem_; // size = n * (k0 + k*(L-1)) * h * w
   vector<shared_ptr<Blob<Dtype> > > bottleneck_inter_; // one for each conv3x3 block if use bottleneck
                                           // all are with the same size n * (bottleneck_rate*k) * h * w
@@ -76,7 +77,7 @@ class DenseBlockLayer : public Layer<Dtype>
                                                     // conv3x3Inter[i].size = n * (k0 + k*(i-1)) * h * w, shared from conv3x3_inter_mem_
                                                     // ReLU.Backward needs its input data, which will be computed again at 
                                                     // backward procedure (a Scale.Forward)
-  vector<shared_ptr<Blob<Dtype> > > input_lth_;  // input for l-th conv block, size = n * (k0 + k*(l-1)) * h * w, shared from top[0]
+  vector<shared_ptr<Blob<Dtype> > > input_lth_;  // input for l-th conv block, size = n * (k0 + k*(l-1)) * h * w, shared from maps_diff_
   vector<shared_ptr<Blob<Dtype> > > output_lth_; // output for l-th conv block, size = n * k * h * w, shared from output_mem_
 
   
