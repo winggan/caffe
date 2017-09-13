@@ -56,6 +56,11 @@ static bool read_file(const char* filepath, std::string& data)
 
 int main1(int argc, char **argv)
 {
+  if (argc == 4 && std::string(argv[3]) == "GPU")
+  {
+    LOG(INFO) << "Using GPU";
+    Caffe::set_mode(Caffe::GPU);
+  }
   unsigned int seed = time(NULL);
   fprintf(stderr, "set random seed: %u\n", seed);
   Caffe::set_random_seed(seed);
@@ -175,7 +180,7 @@ int main1(int argc, char **argv)
                     
 int main(int argc, char **argv)
 {
-  if (argc == 3)
+  if (argc >= 3)
     return main1(argc, argv);
   
   LayerParameter fc_param;

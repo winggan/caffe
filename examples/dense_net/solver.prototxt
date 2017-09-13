@@ -9,4 +9,4 @@ momentum: 0.9
 snapshot: 10000
 snapshot_prefix: "wahaha"
 weight_decay: 0.0005
-solver_mode: CPU
+solver_mode: GPU
