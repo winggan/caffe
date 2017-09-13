@@ -59,12 +59,21 @@ static void assemble_maps(const int n, const int h, const int w, const int c0, c
     dst_ptr_for_new -= dst_stride)
   {
     if (dst_ptr > src_ptr && dst_ptr - src_ptr < src_count)
-      NOT_IMPLEMENTED; 
       // dst_ptr is pointing within the src region [src_ptr, src_ptr + src_count]
       // directly memcpy will cause data lossing, so we copy channel by channel from back to front
-      // TODO
+    {
+      const int batch = dst_ptr - src_ptr;
+      int remains = src_count;
+      Dtype* p_dst = dst_ptr + src_count - batch;
+      const Dtype* p_src = src_ptr + src_count - batch;
+      for (; remains >= batch; remains -= batch, p_dst -= batch, p_src -= batch)
+        caffe_copy(batch, p_src, p_dst);
+      if (remains)
+        caffe_copy(remains, src_ptr, dst_ptr);
+    }
     else
       caffe_copy(src_count, src_ptr, dst_ptr);
+    
     caffe_copy(new_count, new_map_ptr, dst_ptr_for_new);  
   }
   
