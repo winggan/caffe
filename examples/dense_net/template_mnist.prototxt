@@ -7,8 +7,24 @@ layer {
     batch_size: 32
   }
   
-  top: "wahaha_input"
+  top: "yixixi_input"
   top: "wahaha_label"
+}
+layer {
+  name: "conv_pre"
+  type: "Convolution"
+  bottom: "yixixi_input"
+  top: "wahaha_input"
+  convolution_param {
+    num_output: 8
+    bias_term: true
+    pad: 1
+    kernel_size: 3
+    stride: 1
+    weight_filler {
+      type: "msra"
+    }
+  }
 }
 layer {
   name: "dense_test"
@@ -16,8 +32,8 @@ layer {
   bottom: "wahaha_input"
   top: "yixixi_output"
   dense_block_param {
-    num_layers: 2
-    growth_rate: 3
+    num_layers: 4
+    growth_rate: 6
     use_bottleneck: true
     conv3x3_weights_filler {
       type: "msra"

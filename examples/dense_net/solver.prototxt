@@ -1,9 +1,9 @@
 net: "./test_mnist.prototxt"
 display: 100
-base_lr:  5e-2
+base_lr:  5e-3
 lr_policy: "step"
 gamma: 0.1
-stepsize: 100
+stepsize: 1000000
 max_iter: 10000
 momentum: 0.9
 snapshot: 10000

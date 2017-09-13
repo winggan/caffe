@@ -462,13 +462,13 @@ void DenseBlockLayer<Dtype>::setupShapeForInternalBlobs(const Blob<Dtype>* botto
   for (size_t i = btm_shape.size(); i < 4; i++)
     btm_shape.push_back(1);
 
-  {
-    std::string shapeStr("[");
-    for (size_t i = 0; i < btm_shape.size(); i++)
-      shapeStr += _atoi(btm_shape[i]) + ", ";
-    shapeStr += "]";
-    LOG(INFO) << "Reshape based on bottom shape: " << shapeStr;
-  }
+  //{
+  //  std::string shapeStr("[");
+  //  for (size_t i = 0; i < btm_shape.size(); i++)
+  //    shapeStr += _atoi(btm_shape[i]) + ", ";
+  //  shapeStr += "]";
+  //  LOG(INFO) << "Reshape based on bottom shape: " << shapeStr;
+  //}
   vector<int> shape(btm_shape);
   shape[1] = btm_shape[1] + num_layers_ * growth_rate_;
   maps_diff_.Reshape(shape);
