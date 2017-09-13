@@ -1,0 +1,28 @@
+layer {
+  name: "data"
+  type: "Data"
+  data_param {
+    backend: LMDB
+    source: "examples/mnist/mnist_train_lmdb"
+    batch_size: 32
+  }
+  
+  top: "wahaha_input"
+  top: "wahaha_label"
+}
+layer {
+  name: "dense_test"
+  type: "DenseBlock"
+  bottom: "wahaha_input"
+  top: "yixixi_output"
+  dense_block_param {
+    num_layers: 2
+    growth_rate: 3
+    use_bottleneck: true
+    conv3x3_weights_filler {
+      type: "msra"
+    }
+  }
+}
+# %s
+

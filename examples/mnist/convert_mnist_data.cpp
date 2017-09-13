@@ -10,9 +10,11 @@
 #include <glog/logging.h>
 #include <google/protobuf/text_format.h>
 
-#if defined(USE_LEVELDB) && defined(USE_LMDB)
+#if defined(USE_LEVELDB)
 #include <leveldb/db.h>
 #include <leveldb/write_batch.h>
+#endif
+#if defined(USE_LMDB)
 #include <lmdb.h>
 #endif
 
@@ -27,7 +29,7 @@
 #include "caffe/util/db.hpp"
 #include "caffe/util/format.hpp"
 
-#if defined(USE_LEVELDB) && defined(USE_LMDB)
+#if defined(USE_LEVELDB) || defined(USE_LMDB)
 
 using namespace caffe;  // NOLINT(build/namespaces)
 using boost::scoped_ptr;
