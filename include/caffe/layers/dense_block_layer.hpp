@@ -13,9 +13,8 @@ template <typename Dtype>
 class DenseBlockLayer : public Layer<Dtype>
 {
  public:
-  explicit DenseBlockLayer(const LayerParameter& param)
-    : Layer<Dtype>(param),
-      block_param_(param.dense_block_param()){}
+  explicit DenseBlockLayer(const LayerParameter& param);
+  virtual ~DenseBlockLayer();
 
   virtual void LayerSetUp(const vector<Blob<Dtype>*>& bottom,
     const vector<Blob<Dtype>*>& top);
@@ -84,6 +83,10 @@ class DenseBlockLayer : public Layer<Dtype>
   
 
   vector<bool> need_propagate_down_; // size = 1 => { true } 
+
+#ifndef CPU_ONLY
+  cudaStream_t dataCopyStream_, diffCopyStream_;
+#endif 
 
 };
 

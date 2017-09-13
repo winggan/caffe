@@ -4,6 +4,32 @@
 #include <cstdio>
 namespace caffe {
 
+template <typename Dtype>
+DenseBlockLayer<Dtype>::DenseBlockLayer(const LayerParameter& param)
+    : Layer<Dtype>(param),
+      block_param_(param.dense_block_param()) 
+{
+#ifndef CPU_ONLY
+  if (Caffe::mode() == Caffe::GPU)
+  {
+    CUDA_CHECK(cudaStreamCreateWithFlags(&dataCopyStream_, cudaStreamNonBlocking));
+    CUDA_CHECK(cudaStreamCreateWithFlags(&diffCopyStream_, cudaStreamNonBlocking));
+  }
+#endif 
+}
+
+template <typename Dtype>
+DenseBlockLayer<Dtype>::~DenseBlockLayer()
+{
+#ifndef CPU_ONLY
+  if (Caffe::mode() == Caffe::GPU)
+  {
+    CUDA_CHECK(cudaStreamDestroy(dataCopyStream_));
+    CUDA_CHECK(cudaStreamDestroy(diffCopyStream_));
+  }
+#endif 
+}
+
 static std::string _atoi(int num)
 {
   char tmp[20];
@@ -167,6 +193,7 @@ template <typename Dtype>
 void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   const vector<Blob<Dtype>*>& top)
 {
+
   num_layers_ = block_param_.num_layers();
   growth_rate_ = block_param_.growth_rate();
   use_bottleneck_ = block_param_.use_bottleneck();
