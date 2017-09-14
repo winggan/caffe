@@ -348,9 +348,9 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
     // diff and data, each use a individual stream
     // (in gpu) start async "disassemble" (adding part) for this conv block
     disassemble_maps_gpu_adding_part(n, h, w, k0 + l * growth_rate_, growth_rate_, 
-                     maps_diff_.mutable_cpu_data(), output_lth_[l]->mutable_cpu_data(), dataCopyStream_);
+                     maps_diff_.mutable_gpu_data(), output_lth_[l]->mutable_gpu_data(), dataCopyStream_);
     disassemble_maps_gpu_adding_part(n, h, w, k0 + l * growth_rate_, growth_rate_, 
-                     maps_diff_.mutable_cpu_diff(), output_lth_[l]->mutable_cpu_diff(), diffCopyStream_);
+                     maps_diff_.mutable_gpu_diff(), output_lth_[l]->mutable_gpu_diff(), diffCopyStream_);
     
     // (in gpu) synchronize "disassemble" (adding part) here so we can start the 
     // Backward for the conv block
@@ -360,9 +360,9 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
     // (in gpu) start async "disassemble" (original part) to prepare for Backward of 
     // earlier conv in the conv block
     disassemble_maps_gpu_origin_part(n, h, w, k0 + l * growth_rate_, growth_rate_,
-      maps_diff_.mutable_cpu_data(), (Dtype*)NULL /*output_lth_[l]->mutable_cpu_data()*/, dataCopyStream_);
+      maps_diff_.mutable_gpu_data(), (Dtype*)NULL /*output_lth_[l]->mutable_gpu_data()*/, dataCopyStream_);
     disassemble_maps_gpu_origin_part(n, h, w, k0 + l * growth_rate_, growth_rate_,
-      maps_diff_.mutable_cpu_diff(), (Dtype*)NULL /*output_lth_[l]->mutable_cpu_diff()*/, diffCopyStream_);
+      maps_diff_.mutable_gpu_diff(), (Dtype*)NULL /*output_lth_[l]->mutable_gpu_diff()*/, diffCopyStream_);
     
     bn_layers_[l]->Backward(the_output_lth, need_propagate_down_, the_output_lth);
     
@@ -418,15 +418,15 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
       const Dtype* adding_in_ptr;
       if (l > 0)
       {
-        target_ptr = maps_diff_.mutable_cpu_diff(); 
-        adding_in_ptr = tmp_diff_.cpu_diff(); // diff of input_lth_[l]
+        target_ptr = maps_diff_.mutable_gpu_diff(); 
+        adding_in_ptr = tmp_diff_.gpu_diff(); // diff of input_lth_[l]
       }
       else
       {
         // for the first conv block, store the sum of diff in tmp_diff_.diff (input_lth_[0].diff)
         // because pre_bn_layer_ treat input_lth_[0] as the top blob.
-        target_ptr = tmp_diff_.mutable_cpu_diff(); // diff of input_lth_[l]
-        adding_in_ptr = maps_diff_.cpu_diff();
+        target_ptr = tmp_diff_.mutable_gpu_diff(); // diff of input_lth_[l]
+        adding_in_ptr = maps_diff_.gpu_diff();
       }
       
       // in gpu caffe_gpu_axpy is used
