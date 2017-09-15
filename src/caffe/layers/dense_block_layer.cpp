@@ -31,6 +31,7 @@ DenseBlockLayer<Dtype>::~DenseBlockLayer()
     CUDNN_CHECK(cudnnDestroy(cudnn_handle_));
     CUDNN_CHECK(cudnnDestroyTensorDescriptor(bottleneck_inter_desc_));
     CUDNN_CHECK(cudnnDestroyTensorDescriptor(output_desc_));
+    CUDNN_CHECK(cudnnDestroyTensorDescriptor(bottleneck_scale_bias_desc_));
     CUDNN_CHECK(cudnnDestroyTensorDescriptor(final_output_desc_));
     CUDNN_CHECK(cudnnDestroyTensorDescriptor(scale_bias_desc_));
 
@@ -219,18 +220,27 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   CHECK_GT(bottleneck_rate_, 0) << "Bottleneck rate should be at least 1";
 
 #ifdef USE_CUDNN
-
-  CUDNN_CHECK(cudnnCreate(&cudnn_handle_));
-  CUDNN_CHECK(cudnnCreateTensorDescriptor(&bottleneck_inter_desc_));
-  CUDNN_CHECK(cudnnCreateTensorDescriptor(&output_desc_));
-  CUDNN_CHECK(cudnnCreateTensorDescriptor(&final_output_desc_));
-  CUDNN_CHECK(cudnnCreateTensorDescriptor(&scale_bias_desc_));
-  input_desc_.resize(num_layers_);
-  input_scale_bias_desc_.resize(num_layers_);
-  for (int i = 0; i < num_layers_; i++)
+  if (Caffe::mode() == Caffe::GPU)
   {
-    CUDNN_CHECK(cudnnCreateTensorDescriptor(&input_desc_[i]));
-    CUDNN_CHECK(cudnnCreateTensorDescriptor(&input_scale_bias_desc_[i]));
+    CUDNN_CHECK(cudnnCreate(&cudnn_handle_));
+    CUDNN_CHECK(cudnnCreateTensorDescriptor(&bottleneck_inter_desc_));
+    CUDNN_CHECK(cudnnCreateTensorDescriptor(&output_desc_));
+    CUDNN_CHECK(cudnnCreateTensorDescriptor(&bottleneck_scale_bias_desc_));
+    CUDNN_CHECK(cudnnCreateTensorDescriptor(&final_output_desc_));
+    CUDNN_CHECK(cudnnCreateTensorDescriptor(&scale_bias_desc_));
+    input_desc_.resize(num_layers_);
+    input_scale_bias_desc_.resize(num_layers_);
+    for (int i = 0; i < num_layers_; i++)
+    {
+      CUDNN_CHECK(cudnnCreateTensorDescriptor(&input_desc_[i]));
+      CUDNN_CHECK(cudnnCreateTensorDescriptor(&input_scale_bias_desc_[i]));
+    }
+    if (use_bottleneck_)
+    {
+      bottleneck_scale_tmp_.resize(num_layers_);
+      for (int i = 0; i < num_layers_; i++)
+        bottleneck_scale_tmp_[i].reset(new Blob<Dtype>);
+    }
   }
 #endif // USE_CUDNN
 
@@ -749,6 +759,30 @@ void DenseBlockLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
   setupShapeForInternalBlobs(bottom[0]);
   top[0]->ReshapeLike(maps_diff_);
 
+  const vector<int> shape(bottom[0]->shape());
+  const int n = shape[0];
+  const int k0 = shape[1];
+  const int h = shape[2];
+  const int w = shape[3];
+
+#ifdef USE_CUDNN
+  if (Caffe::mode() == Caffe::GPU)
+  {
+    CUDNN_CHECK(cudnnSetTensor4dDescriptor(bottleneck_inter_desc_, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, n, bottleneck_rate_ * growth_rate_, h, w));
+    CUDNN_CHECK(cudnnSetTensor4dDescriptor(output_desc_, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, n, growth_rate_, h, w));
+    CUDNN_CHECK(cudnnSetTensor4dDescriptor(bottleneck_scale_bias_desc_, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, 1, bottleneck_rate_ * growth_rate_, 1, 1));
+    CUDNN_CHECK(cudnnSetTensor4dDescriptor(final_output_desc_, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, n, k0 + num_layers_ * growth_rate_, h, w));
+    CUDNN_CHECK(cudnnSetTensor4dDescriptor(scale_bias_desc_, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, 1, k0 + num_layers_ * growth_rate_, 1, 1));
+    for (int l = 0; l < num_layers_; l++)
+    {
+      CUDNN_CHECK(cudnnSetTensor4dDescriptor(input_desc_[l], CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, n, k0 + l * growth_rate_, h, w));
+      CUDNN_CHECK(cudnnSetTensor4dDescriptor(input_scale_bias_desc_[l], CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, 1, k0 + l * growth_rate_, 1, 1));
+    }
+    if (use_bottleneck_)
+      for (int l = 0; l < num_layers_; l++)
+        bottleneck_scale_tmp_[l]->ReshapeLike(*bottleneck_inter_[l]);
+  }
+#endif // USE_CUDNN
   // invoke Reshape of the internal layers
   {
     vector<int> tmp_shape(input_lth_[0]->shape());

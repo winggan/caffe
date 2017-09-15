@@ -131,10 +131,13 @@ class DenseBlockLayer : public Layer<Dtype>
   cudaStream_t dataCopyStream_, diffCopyStream_;
 #ifdef USE_CUDNN
   cudnnTensorDescriptor_t bottleneck_inter_desc_, output_desc_;
+  cudnnTensorDescriptor_t bottleneck_scale_bias_desc_;
   vector<cudnnTensorDescriptor_t> input_desc_;
   vector<cudnnTensorDescriptor_t> input_scale_bias_desc_;
   cudnnTensorDescriptor_t final_output_desc_;
   cudnnTensorDescriptor_t scale_bias_desc_;
+
+  vector<shared_ptr<Blob<Dtype> > > bottleneck_scale_tmp_;
 
   cudnnHandle_t cudnn_handle_;
 

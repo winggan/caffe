@@ -391,8 +391,15 @@ void DenseBlockLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     if (use_bottleneck_)
     {
       vector<Blob<Dtype>*> the_bottleneck_inter_l(1, bottleneck_inter_[l].get());
-
+#ifdef USE_CUDNN
+      dense_block::ScaleLayerFastForward(cudnn_handle_, 
+        input_desc_[l], the_input_lth[0],
+        input_desc_[l], the_conv3x3_inter_l[0],
+        input_scale_bias_desc_[l], (ScaleLayer<Dtype>*)(bottle_scale_layers_[l].get())
+      );
+#else
       bottle_scale_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
+#endif
       // (in gpu) async "assemble" (original part) can start here to prepare for next conv block
       assemble_maps_gpu_origin_part(n, h, w, k0 + l * growth_rate_, growth_rate_,
         maps_diff_.mutable_gpu_data(), (const Dtype*)NULL /*output_lth_[l]->gpu_data()*/, dataCopyStream_);
@@ -401,7 +408,18 @@ void DenseBlockLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
 
       conv1x1_layers_[l]->Forward(the_conv3x3_inter_l, the_bottleneck_inter_l);
       bottle_bn_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
+#ifdef USE_CUDNN
+      caffe_copy(bottleneck_scale_tmp_[l]->count(), 
+                 the_bottleneck_inter_l[0]->gpu_data(), 
+                 bottleneck_scale_tmp_[l]->mutable_gpu_data());
+      dense_block::ScaleLayerFastForward(cudnn_handle_,
+        bottleneck_inter_desc_, bottleneck_scale_tmp_[l].get(),
+        bottleneck_inter_desc_, the_bottleneck_inter_l[0],
+        bottleneck_scale_bias_desc_, (ScaleLayer<Dtype>*)(scale_layers_[l].get())
+      );
+#else
       scale_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
+#endif
       relu_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
 
       conv3x3_layers_[l]->Forward(the_bottleneck_inter_l, the_output_lth);
@@ -409,7 +427,15 @@ void DenseBlockLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     }
     else
     {
+#ifdef USE_CUDNN
+      dense_block::ScaleLayerFastForward(cudnn_handle_,
+        input_desc_[l], the_input_lth[0],
+        input_desc_[l], the_conv3x3_inter_l[0],
+        input_scale_bias_desc_[l], (ScaleLayer<Dtype>*)(scale_layers_[l].get())
+      );
+#else
       scale_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
+#endif
       // (in gpu) async "assemble" (original part) can start here to prepare for next conv block
       assemble_maps_gpu_origin_part(n, h, w, k0 + l * growth_rate_, growth_rate_,
         maps_diff_.mutable_gpu_data(), (const Dtype*)NULL /*output_lth_[l]->gpu_data()*/, dataCopyStream_);
@@ -439,8 +465,15 @@ void DenseBlockLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
 
   // maps_diff_.data() store the output data (before post_scale_layer_), 
   //which will be used in backward of the input scale of each conv block
-
+#ifdef USE_CUDNN
+  dense_block::ScaleLayerFastForward(cudnn_handle_,
+    final_output_desc_, &maps_diff_,
+    final_output_desc_, top[0],
+    scale_bias_desc_, (ScaleLayer<Dtype>*)(post_scale_layer_.get())
+  );
+#else
   post_scale_layer_->Forward(vector<Blob<Dtype>*>(1, &maps_diff_), top);
+#endif
   post_relu_layer_->Forward(top, top);
 }
 
