@@ -105,19 +105,19 @@ void dense_block::ScaleLayerFastBackward(cudnnHandle_t handle,
 }
 
 namespace dense_block {
-  template <> void ScaleLayerFastForward(cudnnHandle_t handle,
+  template void ScaleLayerFastForward(cudnnHandle_t handle,
     cudnnTensorDescriptor_t bottom_desc, Blob<float>* bottom,
     cudnnTensorDescriptor_t top_desc, Blob<float> *top,
     cudnnTensorDescriptor_t scale_bias_desc, ScaleLayer<float> *scale_layer);
-  template <> void ScaleLayerFastForward(cudnnHandle_t handle,
+  template void ScaleLayerFastForward(cudnnHandle_t handle,
     cudnnTensorDescriptor_t bottom_desc, Blob<double>* bottom,
     cudnnTensorDescriptor_t top_desc, Blob<double> *top,
     cudnnTensorDescriptor_t scale_bias_desc, ScaleLayer<double> *scale_layer);
-  template <> void ScaleLayerFastBackward(cudnnHandle_t handle,
+  template void ScaleLayerFastBackward(cudnnHandle_t handle,
     cudnnTensorDescriptor_t scale_bias_desc, ScaleLayer<float> *scale_layer,
     cudnnTensorDescriptor_t top_desc, Blob<float> *top,
     cudnnTensorDescriptor_t bottom_desc, Blob<float>* bottom);
-  template <> void ScaleLayerFastBackward(cudnnHandle_t handle,
+  template void ScaleLayerFastBackward(cudnnHandle_t handle,
     cudnnTensorDescriptor_t scale_bias_desc, ScaleLayer<double> *scale_layer,
     cudnnTensorDescriptor_t top_desc, Blob<double> *top,
     cudnnTensorDescriptor_t bottom_desc, Blob<double>* bottom);
