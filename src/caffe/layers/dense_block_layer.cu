@@ -91,11 +91,11 @@ void dense_block::ScaleLayerFastBackward(cudnnHandle_t handle,
   Dtype zero(0.);
 
   // gradient w.r.t bias
-  reduce_nhw(handle, one, top_desc,   top->gpu_diff(),     one, scale_bias_desc, scale_layer->blobs()[1]->gpu_diff());
+  reduce_nhw(handle, one, top_desc,   top->gpu_diff(),     one, scale_bias_desc, scale_layer->blobs()[1]->mutable_gpu_diff());
 
   // gradient w.r.t scale
   caffe_cublas_mul(bottom->count(), bottom->gpu_data(), top->gpu_diff(), bottom->mutable_gpu_diff());
-  reduce_nhw(handle, one, bottom_desc, bottom->gpu_data(), one, scale_bias_desc, scale_layer->blobs()[0]->gpu_diff());
+  reduce_nhw(handle, one, bottom_desc, bottom->gpu_data(), one, scale_bias_desc, scale_layer->blobs()[0]->mutable_gpu_diff());
 
   // gradient w.r.t bottom
   CUDNN_CHECK(cudnnOpTensor(handle, StaticVariable<Dtype>::get().fast_scale_fwd_op_desc(),
