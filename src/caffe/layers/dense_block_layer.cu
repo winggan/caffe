@@ -491,8 +491,16 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
     << "Invalid top shape according to k0 + num_layers_ * growth_rate_";
     
   post_relu_layer_->Backward(top, need_propagate_down_, top);
+#ifdef USE_CUDNN
+  dense_block::ScaleLayerFastBackward(cudnn_handle_,
+    scale_bias_desc_, (ScaleLayer<Dtype>*)(post_scale_layer_.get()),
+    final_output_desc_, top[0],
+    final_output_desc_, &maps_diff_
+  );
+#else
   post_scale_layer_->Backward(top, need_propagate_down_, vector<Blob<Dtype>*>(1, &maps_diff_));
-  
+#endif
+
   for (int l = num_layers_ - 1; l >= 0 ; l --)
   {
     vector<Blob<Dtype>*> the_input_lth(1, input_lth_[l].get());
@@ -532,7 +540,18 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
       conv3x3_layers_[l]->Backward(the_output_lth, need_propagate_down_, the_bottleneck_inter_l);
       
       relu_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_bottleneck_inter_l);
+#ifdef USE_CUDNN
+      dense_block::ScaleLayerFastBackward(cudnn_handle_,
+        bottleneck_scale_bias_desc_, (ScaleLayer<Dtype>*)(scale_layers_[l].get()),
+        bottleneck_inter_desc_, the_bottleneck_inter_l[0],
+        bottleneck_inter_desc_, bottleneck_scale_tmp_[l].get()
+      );
+      caffe_copy(bottleneck_scale_tmp_[l]->count(),
+        bottleneck_scale_tmp_[l]->gpu_diff(),
+        the_bottleneck_inter_l[0]->mutable_gpu_diff());
+#else
       scale_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_bottleneck_inter_l);
+#endif
       bottle_bn_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_bottleneck_inter_l);
       
       // (in gpu) synchronize "disassemble" (original part) so we can continue the preparation 
@@ -541,13 +560,29 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
       CUDA_CHECK(cudaStreamSynchronize(diffCopyStream_));
       
       // re-calculate the bottom_data of conv1x1 from bottle_scale_layers_[l] and bottle_relu_layers_[l]
+#ifdef USE_CUDNN
+      dense_block::ScaleLayerFastForward(cudnn_handle_,
+        input_desc_[l], the_input_lth[0],
+        input_desc_[l], the_conv3x3_inter_l[0],
+        input_scale_bias_desc_[l], (ScaleLayer<Dtype>*)(bottle_scale_layers_[l].get())
+      );
+#else
       bottle_scale_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
+#endif
       bottle_relu_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
       
       conv1x1_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_conv3x3_inter_l);
       
       bottle_relu_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_conv3x3_inter_l);
+#ifdef USE_CUDNN
+      dense_block::ScaleLayerFastBackward(cudnn_handle_,
+        input_scale_bias_desc_[l], (ScaleLayer<Dtype>*)(bottle_scale_layers_[l].get()),
+        input_desc_[l], the_conv3x3_inter_l[0],
+        input_desc_[l], the_input_lth[0]
+      );
+#else
       bottle_scale_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_input_lth);
+#endif
     }
     else
     {
@@ -557,13 +592,29 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
       CUDA_CHECK(cudaStreamSynchronize(diffCopyStream_));
       
       // re-calculate the bottom_data of conv3x3 from scale_layers_[l] and relu_layers_[l]
+#ifdef USE_CUDNN
+      dense_block::ScaleLayerFastForward(cudnn_handle_,
+        input_desc_[l], the_input_lth[0],
+        input_desc_[l], the_conv3x3_inter_l[0],
+        input_scale_bias_desc_[l], (ScaleLayer<Dtype>*)(scale_layers_[l].get())
+      );
+#else
       scale_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
+#endif
       relu_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
       
       conv3x3_layers_[l]->Backward(the_output_lth, need_propagate_down_, the_conv3x3_inter_l);
       
       relu_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_conv3x3_inter_l);
+#ifdef USE_CUDNN
+      dense_block::ScaleLayerFastBackward(cudnn_handle_,
+        input_scale_bias_desc_[l], (ScaleLayer<Dtype>*)(scale_layers_[l].get()),
+        input_desc_[l], the_conv3x3_inter_l[0],
+        input_desc_[l], the_input_lth[0]
+      );
+#else
       scale_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_input_lth);
+#endif
     }
     
     { // add the diff together before continue

@@ -779,8 +779,14 @@ void DenseBlockLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
       CUDNN_CHECK(cudnnSetTensor4dDescriptor(input_scale_bias_desc_[l], CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, 1, k0 + l * growth_rate_, 1, 1));
     }
     if (use_bottleneck_)
-      for (int l = 0; l < num_layers_; l++)
+    {
+      bottleneck_scale_tmp_[0]->ReshapeLike(*bottleneck_inter_[0]);
+      for (int l = 1; l < num_layers_; l++)
+      {
         bottleneck_scale_tmp_[l]->ReshapeLike(*bottleneck_inter_[l]);
+        bottleneck_scale_tmp_[l]->ShareDiff(*bottleneck_scale_tmp_[0]);
+      }
+    }
   }
 #endif // USE_CUDNN
   // invoke Reshape of the internal layers
