@@ -5,9 +5,50 @@
 #include "caffe/layer_factory.hpp"
 #include "caffe/blob.hpp"
 #include "caffe/common.hpp"
+#include "caffe/layers/scale_layer.hpp"
 #include "caffe/proto/caffe.pb.h"
 
 namespace caffe {
+
+#if !defined(CPU_ONLY) && defined(USE_CUDNN)
+
+namespace dense_block {
+
+// util functions used by dense block implementation
+
+  template <typename Dtype>
+  class StaticVariable
+  {
+  public:
+    inline static StaticVariable<Dtype>& get() { return instance_; }
+    inline const cudnnOpTensorDescriptor_t fast_scale_fwd_op_desc() 
+      { return fast_scale_fwd_op_desc_; }
+
+    ~StaticVariable();
+  private:
+    static StaticVariable<Dtype> instance_;
+    
+    StaticVariable();
+    cudnnOpTensorDescriptor_t fast_scale_fwd_op_desc_;
+
+    DISABLE_COPY_AND_ASSIGN(StaticVariable);
+  };
+
+  template <typename Dtype>
+  void ScaleLayerFastForward(cudnnHandle_t handle,
+    cudnnTensorDescriptor_t bottom_desc, Blob<Dtype>* bottom,
+    cudnnTensorDescriptor_t top_desc, Blob<Dtype> *top,
+    cudnnTensorDescriptor_t scale_bias_desc, ScaleLayer<Dtype> *scale_layer);
+
+  template <typename Dtype>
+  void ScaleLayerFastBackward(cudnnHandle_t handle,
+    cudnnTensorDescriptor_t scale_bias_desc, ScaleLayer<Dtype> *scale_layer,
+    cudnnTensorDescriptor_t top_desc, Blob<Dtype> *top,
+    cudnnTensorDescriptor_t bottom_desc, Blob<Dtype>* bottom);
+
+} // namespace dense_block 
+
+#endif // !defined(CPU_ONLY) && defined(USE_CUDNN)
 
 template <typename Dtype>
 class DenseBlockLayer : public Layer<Dtype>
@@ -26,6 +67,8 @@ class DenseBlockLayer : public Layer<Dtype>
   virtual inline int ExactNumTopBlobs() const { return 1; }
 
   void convertToPlainLayers(vector<LayerParameter>& layer_params);
+
+
 
  protected:
   
@@ -83,10 +126,20 @@ class DenseBlockLayer : public Layer<Dtype>
   
 
   vector<bool> need_propagate_down_; // size = 1 => { true } 
-
+  vector<int> current_btm_shape_;
 #ifndef CPU_ONLY
   cudaStream_t dataCopyStream_, diffCopyStream_;
-#endif 
+#ifdef USE_CUDNN
+  cudnnTensorDescriptor_t bottleneck_inter_desc_, output_desc_;
+  vector<cudnnTensorDescriptor_t> input_desc_;
+  vector<cudnnTensorDescriptor_t> input_scale_bias_desc_;
+  cudnnTensorDescriptor_t final_output_desc_;
+  cudnnTensorDescriptor_t scale_bias_desc_;
+
+  cudnnHandle_t cudnn_handle_;
+
+#endif // USE_CUDNN
+#endif // CPU_ONLY
 
 };
 

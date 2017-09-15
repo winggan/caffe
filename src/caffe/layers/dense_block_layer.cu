@@ -4,6 +4,124 @@
 namespace caffe {
 
 template <typename Dtype>
+static void caffe_cublas_mul(const int N, const Dtype* a, const Dtype* b, Dtype* y);
+
+template <> 
+static void caffe_cublas_mul<float>(const int N, const float* a, const float* b, float* y)
+{
+  float one(1.);
+  float zero(0.);
+  CUBLAS_CHECK(cublasSsbmv(Caffe::cublas_handle(),
+    CUBLAS_FILL_MODE_LOWER, N, 0,
+    &one, a, 1, b, 1,
+    &zero, y, 1));
+}
+template <>
+static void caffe_cublas_mul<double>(const int N, const double* a, const double* b, double* y)
+{
+  double one(1.);
+  double zero(0.);
+  CUBLAS_CHECK(cublasDsbmv(Caffe::cublas_handle(),
+    CUBLAS_FILL_MODE_LOWER, N, 0,
+    &one, a, 1, b, 1,
+    &zero, y, 1));
+}
+
+#ifdef USE_CUDNN
+template <typename Dtype>
+dense_block::StaticVariable<Dtype> dense_block::StaticVariable<Dtype>::instance_;
+
+template <typename Dtype>
+dense_block::StaticVariable<Dtype>::StaticVariable() : fast_scale_fwd_op_desc_(NULL)
+{
+  CUDNN_CHECK(cudnnCreateOpTensorDescriptor(&fast_scale_fwd_op_desc_));
+  CUDNN_CHECK(cudnnSetOpTensorDescriptor(fast_scale_fwd_op_desc_, CUDNN_OP_TENSOR_MUL, cudnn::dataType<Dtype>::type, CUDNN_PROPAGATE_NAN));
+}
+
+template <typename Dtype>
+dense_block::StaticVariable<Dtype>::~StaticVariable()
+{
+  if (fast_scale_fwd_op_desc_)
+    CUDNN_CHECK(cudnnDestroyOpTensorDescriptor(fast_scale_fwd_op_desc_));
+}
+
+template <typename Dtype>
+static void reduce_nhw(cudnnHandle_t handle, 
+                       Dtype alpha_, cudnnTensorDescriptor_t nchw_desc_, const Dtype* nchw_ptr_,
+                       Dtype beta_, cudnnTensorDescriptor_t c_desc_, Dtype* c_ptr_)
+{
+  Dtype a(alpha_);
+  Dtype b(beta_);
+  // we assume that these 2 tensor descriptors are configured to right data type
+  CUDNN_CHECK(cudnnConvolutionBackwardBias(handle,
+    &a, nchw_desc_, nchw_ptr_, &b, c_desc_, c_ptr_));
+}
+
+template <typename Dtype>
+void dense_block::ScaleLayerFastForward(cudnnHandle_t handle,
+  cudnnTensorDescriptor_t bottom_desc, Blob<Dtype>* bottom,
+  cudnnTensorDescriptor_t top_desc, Blob<Dtype> *top,
+  cudnnTensorDescriptor_t scale_bias_desc, ScaleLayer<Dtype> *scale_layer)
+{
+  CHECK_NE(bottom, top) << "ScaleLayerFastForward dose not support in-place computation";
+
+  Dtype one(1.);
+  Dtype zero(0.);
+
+  CUDNN_CHECK(cudnnOpTensor(handle, StaticVariable<Dtype>::get().fast_scale_fwd_op_desc(),
+    &one, bottom_desc, bottom->gpu_data(),
+    &one, scale_bias_desc, scale_layer->blobs()[0]->gpu_data(),
+    &zero, top_desc, top->mutable_gpu_data()));
+
+  CUDNN_CHECK(cudnnAddTensor(handle,
+    &one, scale_bias_desc, scale_layer->blobs()[1]->gpu_data(),
+    &one, top_desc, top->mutable_gpu_data()));
+
+}
+template <> void dense_block::ScaleLayerFastForward(cudnnHandle_t handle,
+  cudnnTensorDescriptor_t bottom_desc, Blob<float>* bottom,
+  cudnnTensorDescriptor_t top_desc, Blob<float> *top,
+  cudnnTensorDescriptor_t scale_bias_desc, ScaleLayer<float> *scale_layer);
+template <> void dense_block::ScaleLayerFastForward(cudnnHandle_t handle,
+  cudnnTensorDescriptor_t bottom_desc, Blob<double>* bottom,
+  cudnnTensorDescriptor_t top_desc, Blob<double> *top,
+  cudnnTensorDescriptor_t scale_bias_desc, ScaleLayer<double> *scale_layer);
+
+template <typename Dtype>
+void dense_block::ScaleLayerFastBackward(cudnnHandle_t handle,
+  cudnnTensorDescriptor_t scale_bias_desc, ScaleLayer<Dtype> *scale_layer,
+  cudnnTensorDescriptor_t top_desc, Blob<Dtype> *top,
+  cudnnTensorDescriptor_t bottom_desc, Blob<Dtype>* bottom)
+{
+  CHECK_NE(bottom, top) << "ScaleLayerFastForward dose not support in-place computation";
+  
+  Dtype one(1.);
+  Dtype zero(0.);
+
+  // gradient w.r.t bias
+  reduce_nhw(handle, one, top_desc,   top->gpu_diff(),     one, scale_bias_desc, scale_layer->blobs()[1]->gpu_diff());
+
+  // gradient w.r.t scale
+  caffe_cublas_mul(bottom->count(), bottom->gpu_data(), top->gpu_diff(), bottom->mutable_gpu_diff());
+  reduce_nhw(handle, one, bottom_desc, bottom->gpu_data(), one, scale_bias_desc, scale_layer->blobs()[0]->gpu_diff());
+
+  // gradient w.r.t bottom
+  CUDNN_CHECK(cudnnOpTensor(handle, StaticVariable<Dtype>::get().fast_scale_fwd_op_desc(),
+    &one, top_desc, top->gpu_diff(),
+    &one, scale_bias_desc, scale_layer->blobs()[0]->gpu_data(),
+    &zero, bottom_desc, bottom->mutable_gpu_diff()));
+}
+template <> void dense_block::ScaleLayerFastBackward(cudnnHandle_t handle,
+  cudnnTensorDescriptor_t scale_bias_desc, ScaleLayer<float> *scale_layer,
+  cudnnTensorDescriptor_t top_desc, Blob<float> *top,
+  cudnnTensorDescriptor_t bottom_desc, Blob<float>* bottom);
+template <> void dense_block::ScaleLayerFastBackward(cudnnHandle_t handle,
+  cudnnTensorDescriptor_t scale_bias_desc, ScaleLayer<double> *scale_layer,
+  cudnnTensorDescriptor_t top_desc, Blob<double> *top,
+  cudnnTensorDescriptor_t bottom_desc, Blob<double>* bottom);
+#endif // USE_CUNN
+
+template <typename Dtype>
 inline static void caffe_gpu_copy_async(const int N, const Dtype* X, Dtype* Y, const cudaStream_t& stream) {
   if (X != Y && Caffe::mode() == Caffe::GPU) {
 #ifndef CPU_ONLY

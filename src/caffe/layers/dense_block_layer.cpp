@@ -14,6 +14,7 @@ DenseBlockLayer<Dtype>::DenseBlockLayer(const LayerParameter& param)
   {
     CUDA_CHECK(cudaStreamCreateWithFlags(&dataCopyStream_, cudaStreamNonBlocking));
     CUDA_CHECK(cudaStreamCreateWithFlags(&diffCopyStream_, cudaStreamNonBlocking));
+    
   }
 #endif 
 }
@@ -26,6 +27,19 @@ DenseBlockLayer<Dtype>::~DenseBlockLayer()
   {
     CUDA_CHECK(cudaStreamDestroy(dataCopyStream_));
     CUDA_CHECK(cudaStreamDestroy(diffCopyStream_));
+#ifdef USE_CUDNN
+    CUDNN_CHECK(cudnnDestroy(cudnn_handle_));
+    CUDNN_CHECK(cudnnDestroyTensorDescriptor(bottleneck_inter_desc_));
+    CUDNN_CHECK(cudnnDestroyTensorDescriptor(output_desc_));
+    CUDNN_CHECK(cudnnDestroyTensorDescriptor(final_output_desc_));
+    CUDNN_CHECK(cudnnDestroyTensorDescriptor(scale_bias_desc_));
+
+    for (size_t i = 0; i < input_desc_.size(); i++)
+    {
+      CUDNN_CHECK(cudnnDestroyTensorDescriptor(input_desc_[i]));
+      CUDNN_CHECK(cudnnDestroyTensorDescriptor(input_scale_bias_desc_[i]));
+    }
+#endif // USE_CUDNN
   }
 #endif 
 }
@@ -204,6 +218,22 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   CHECK_GT(growth_rate_, 0) << "Growth rate cannot be 0";
   CHECK_GT(bottleneck_rate_, 0) << "Bottleneck rate should be at least 1";
 
+#ifdef USE_CUDNN
+
+  CUDNN_CHECK(cudnnCreate(&cudnn_handle_));
+  CUDNN_CHECK(cudnnCreateTensorDescriptor(&bottleneck_inter_desc_));
+  CUDNN_CHECK(cudnnCreateTensorDescriptor(&output_desc_));
+  CUDNN_CHECK(cudnnCreateTensorDescriptor(&final_output_desc_));
+  CUDNN_CHECK(cudnnCreateTensorDescriptor(&scale_bias_desc_));
+  input_desc_.resize(num_layers_);
+  input_scale_bias_desc_.resize(num_layers_);
+  for (int i = 0; i < num_layers_; i++)
+  {
+    CUDNN_CHECK(cudnnCreateTensorDescriptor(&input_desc_[i]));
+    CUDNN_CHECK(cudnnCreateTensorDescriptor(&input_scale_bias_desc_[i]));
+  }
+#endif // USE_CUDNN
+
   generataeLayerParamsForBlock();
 
   need_propagate_down_.resize(1, true);
@@ -357,6 +387,9 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
     // Size Check and Data Copy will be done in Reshape
   }
 
+  current_btm_shape_ = bottom[0]->shape();
+  current_btm_shape_[2] = 0;
+  current_btm_shape_[3] = 0;
 }
 
 template <typename Dtype>
@@ -489,6 +522,8 @@ void DenseBlockLayer<Dtype>::setupShapeForInternalBlobs(const Blob<Dtype>* botto
   for (size_t i = btm_shape.size(); i < 4; i++)
     btm_shape.push_back(1);
 
+  int workspace_count = 0;
+
   //{
   //  std::string shapeStr("[");
   //  for (size_t i = 0; i < btm_shape.size(); i++)
@@ -501,11 +536,19 @@ void DenseBlockLayer<Dtype>::setupShapeForInternalBlobs(const Blob<Dtype>* botto
   maps_diff_.Reshape(shape);
   tmp_diff_.Reshape(shape);
 
+  workspace_count += 2*maps_diff_.count();
+  workspace_count += tmp_diff_.count();
+
   conv3x3_inter_mem_.Reshape(shape);
+
+  workspace_count += 2*conv3x3_inter_mem_.count();
 
   shape[1] = growth_rate_ * bottleneck_rate_;
   for (size_t i = 0; i < bottleneck_inter_.size(); i++)
     bottleneck_inter_[i]->Reshape(shape);
+
+  workspace_count += 2*bottleneck_inter_.size() * bottleneck_inter_[0]->count();
+  LOG(INFO) << "workspace_count = " << workspace_count;
 
   for (size_t i = 0; i < conv3x3_inter_.size(); i++)
   {
@@ -698,6 +741,10 @@ void DenseBlockLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
 
   vector<int> outputShape(bottom[0]->shape());
   CHECK_EQ(outputShape.size(), 4) << "Dense block are designed for 4D (n, c, h, w) tensor";
+
+  if (current_btm_shape_ == bottom[0]->shape())
+    return;
+  current_btm_shape_ = bottom[0]->shape();
 
   setupShapeForInternalBlobs(bottom[0]);
   top[0]->ReshapeLike(maps_diff_);
