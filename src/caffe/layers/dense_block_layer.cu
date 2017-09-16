@@ -3,29 +3,29 @@
 
 namespace caffe {
 
-template <typename Dtype>
-void caffe_cublas_mul(const int N, const Dtype* a, const Dtype* b, Dtype* y);
-
-template <> 
-void caffe_cublas_mul<float>(const int N, const float* a, const float* b, float* y)
-{
-  float one(1.);
-  float zero(0.);
-  CUBLAS_CHECK(cublasSsbmv(Caffe::cublas_handle(),
-    CUBLAS_FILL_MODE_LOWER, N, 0,
-    &one, a, 1, b, 1,
-    &zero, y, 1));
-}
-template <>
-void caffe_cublas_mul<double>(const int N, const double* a, const double* b, double* y)
-{
-  double one(1.);
-  double zero(0.);
-  CUBLAS_CHECK(cublasDsbmv(Caffe::cublas_handle(),
-    CUBLAS_FILL_MODE_LOWER, N, 0,
-    &one, a, 1, b, 1,
-    &zero, y, 1));
-}
+//template <typename Dtype>
+//void caffe_cublas_mul(const int N, const Dtype* a, const Dtype* b, Dtype* y);
+//
+//template <> 
+//void caffe_cublas_mul<float>(const int N, const float* a, const float* b, float* y)
+//{
+//  float one(1.);
+//  float zero(0.);
+//  CUBLAS_CHECK(cublasSsbmv(Caffe::cublas_handle(),
+//    CUBLAS_FILL_MODE_LOWER, N, 0,
+//    &one, a, 1, b, 1,
+//    &zero, y, 1));
+//}
+//template <>
+//void caffe_cublas_mul<double>(const int N, const double* a, const double* b, double* y)
+//{
+//  double one(1.);
+//  double zero(0.);
+//  CUBLAS_CHECK(cublasDsbmv(Caffe::cublas_handle(),
+//    CUBLAS_FILL_MODE_LOWER, N, 0,
+//    &one, a, 1, b, 1,
+//    &zero, y, 1));
+//}
 
 #ifdef USE_CUDNN
 template <typename Dtype>
@@ -94,7 +94,7 @@ void dense_block::ScaleLayerFastBackward(cudnnHandle_t handle,
   reduce_nhw(handle, one, top_desc,   top->gpu_diff(),     one, scale_bias_desc, scale_layer->blobs()[1]->mutable_gpu_diff());
 
   // gradient w.r.t scale
-  caffe_cublas_mul(bottom->count(), bottom->gpu_data(), top->gpu_diff(), bottom->mutable_gpu_diff());
+  caffe_gpu_mul(bottom->count(), bottom->gpu_data(), top->gpu_diff(), bottom->mutable_gpu_diff());
   reduce_nhw(handle, one, bottom_desc, bottom->gpu_diff(), one, scale_bias_desc, scale_layer->blobs()[0]->mutable_gpu_diff());
 
   // gradient w.r.t bottom
