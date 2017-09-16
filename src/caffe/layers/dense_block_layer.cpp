@@ -12,9 +12,10 @@ DenseBlockLayer<Dtype>::DenseBlockLayer(const LayerParameter& param)
 #ifndef CPU_ONLY
   if (Caffe::mode() == Caffe::GPU)
   {
-    CUDA_CHECK(cudaStreamCreateWithFlags(&dataCopyStream_, cudaStreamNonBlocking));
-    CUDA_CHECK(cudaStreamCreateWithFlags(&diffCopyStream_, cudaStreamNonBlocking));
-    
+    //CUDA_CHECK(cudaStreamCreateWithFlags(&dataCopyStream_, cudaStreamNonBlocking));
+    //CUDA_CHECK(cudaStreamCreateWithFlags(&diffCopyStream_, cudaStreamNonBlocking));
+    CUDA_CHECK(cudaStreamCreate(&dataCopyStream_));
+    CUDA_CHECK(cudaStreamCreate(&diffCopyStream_));
   }
 #endif 
 }
