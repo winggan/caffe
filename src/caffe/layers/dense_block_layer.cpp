@@ -229,7 +229,7 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   bottleneck_rate_ = block_param_.bottleneck_rate();
   use_dropout_ = block_param_.use_dropout();
 
-  CHECK_GT(num_layers_, 1) << "There should be at least 2 layers in the block";
+  CHECK_GT(num_layers_, 0) << "There should be at least 1 layers in the block";
   CHECK_GT(growth_rate_, 0) << "Growth rate cannot be 0";
   CHECK_GT(bottleneck_rate_, 0) << "Bottleneck rate should be at least 1";
 
