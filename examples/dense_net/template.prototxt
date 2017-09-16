@@ -22,6 +22,9 @@ layer {
     conv3x3_weights_filler {
       type: "msra"
     }
+    conv1x1_weights_filler {
+      type: "msra"
+    }
   }
 }
 # %s
