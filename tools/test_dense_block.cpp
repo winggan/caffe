@@ -19,6 +19,18 @@
 typedef float Dtype;
 using namespace caffe;
 
+static void dump_array(const char *comment, int count, const Dtype* arr)
+{
+  vector<int> shape(1, count);
+  Blob<Dtype> aa;
+  aa.Reshape(shape);
+  caffe_copy(count, arr, aa.mutable_cpu_data());
+  const Dtype* a_ptr = aa.cpu_data();
+  fprintf(stderr, "%s: ", comment);
+  for (int i = 0; i < count; i ++)
+    fprintf(stderr, "%f ", a_ptr[i]);
+  fprintf(stderr, "\n");
+}
 
 template <typename T>
 T array_max_diff(const int count, const T* a, const T*b)
@@ -160,6 +172,8 @@ int main1(int argc, char **argv)
               << array_max_diff(net->blob_by_name("yixixi_output")->count(),
                                 net->blob_by_name("yixixi_output")->cpu_data(),
                                 net->blob_by_name("yixixi_output_2")->cpu_data());
+
+    //dump_array("plain", net->blob_by_name("dense_test_concat_0")->count(), net->blob_by_name("dense_test_concat_0")->gpu_data());
  
     net->Backward();    
  
