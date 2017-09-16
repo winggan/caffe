@@ -156,7 +156,11 @@ int main1(int argc, char **argv)
     //LOG(INFO) << "d1 = " << d1 << ", d2 = " << d2;
     //for (int d = 0; d < d_count; d ++)
     //  fprintf(stdout, "%4d %4d %4d  %f %f %f\n", d / n_stride, d % n_stride / c_stride, d % c_stride, d1[d] - d2[d], d1[d], d2[d]);
-    
+    LOG(INFO) << "output_diff = "
+              << array_max_diff(net->blob_by_name("yixixi_output")->count(),
+                                net->blob_by_name("yixixi_output")->cpu_data(),
+                                net->blob_by_name("yixixi_output_2")->cpu_data());
+ 
     net->Backward();    
  
     for (int i = plain_dense_block_start, offset = 0; i < fc_2_id; i ++)
