@@ -147,7 +147,21 @@ static void disassemble_maps(const int n, const int h, const int w, const int c0
     src_ptr_for_out += src_stride)
   {
     caffe_copy(out_count, src_ptr_for_out, out_map_ptr);
-    caffe_copy(dst_count, src_ptr, dst_ptr);
+    // CAUTION: in memcpy, there shoud not be any overlap between
+    //          src memory region and dst memory region
+    if (src_ptr > dst_ptr && src_ptr < dst_ptr + dst_count)
+    {
+      const int batch = src_ptr - dst_ptr;
+      int remains = dst_count;
+      Dtype* p_dst = dst_ptr;
+      const Dtype* p_src = src_ptr;
+      for (; remains >= batch; remains -= batch, p_dst += batch, p_src += batch)
+        caffe_copy(batch, p_src, p_dst);
+      if (remains)
+        caffe_copy(remains, p_src, p_dst);
+    }
+    else
+      caffe_copy(dst_count, src_ptr, dst_ptr);
   }
 }
 

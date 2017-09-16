@@ -209,7 +209,21 @@ static void disassemble_maps_gpu(const int n, const int h, const int w, const in
     src_ptr_for_out += src_stride)
   {
     caffe_gpu_copy_async(out_count, src_ptr_for_out, out_map_ptr, stream);
-    caffe_gpu_copy_async(dst_count, src_ptr, dst_ptr, stream);
+    // CAUTION: in memcpy, there shoud not be any overlap between
+    //          src memory region and dst memory region
+    if (src_ptr > dst_ptr && src_ptr < dst_ptr + dst_count)
+    {
+      const int batch = src_ptr - dst_ptr;
+      int remains = dst_count;
+      Dtype* p_dst = dst_ptr;
+      const Dtype* p_src = src_ptr;
+      for (; remains >= batch; remains -= batch, p_dst += batch, p_src += batch)
+        caffe_gpu_copy_async(batch, p_src, p_dst, stream);
+      if (remains)
+        caffe_gpu_copy_async(remains, p_src, p_dst, stream);
+    }
+    else
+      caffe_gpu_copy_async(dst_count, src_ptr, dst_ptr, stream);
   }
 }
 
@@ -286,6 +300,20 @@ static void disassemble_maps_gpu_adding_part(const int n, const int h, const int
     src_ptr_for_out += src_stride)
   {
     caffe_gpu_copy_async(out_count, src_ptr_for_out, out_map_ptr, stream);
+    // CAUTION: in memcpy, there shoud not be any overlap between
+    //          src memory region and dst memory region
+    //if (src_ptr > dst_ptr && src_ptr < dst_ptr + dst_count)
+    //{
+    //  const int batch = src_ptr - dst_ptr;
+    //  int remains = dst_count;
+    //  Dtype* p_dst = dst_ptr;
+    //  const Dtype* p_src = src_ptr;
+    //  for (; remains >= batch; remains -= batch, p_dst += batch, p_src += batch)
+    //    caffe_gpu_copy_async(batch, p_src, p_dst, stream);
+    //  if (remains)
+    //    caffe_gpu_copy_async(remains, p_src, p_dst, stream);
+    //}
+    //else
     //caffe_gpu_copy_async(dst_count, src_ptr, dst_ptr, stream);
   }
 }
@@ -363,7 +391,21 @@ static void disassemble_maps_gpu_origin_part(const int n, const int h, const int
     src_ptr_for_out += src_stride)
   {
     //caffe_gpu_copy_async(out_count, src_ptr_for_out, out_map_ptr, stream);
-    caffe_gpu_copy_async(dst_count, src_ptr, dst_ptr, stream);
+    // CAUTION: in memcpy, there shoud not be any overlap between
+    //          src memory region and dst memory region
+    if (src_ptr > dst_ptr && src_ptr < dst_ptr + dst_count)
+    {
+      const int batch = src_ptr - dst_ptr;
+      int remains = dst_count;
+      Dtype* p_dst = dst_ptr;
+      const Dtype* p_src = src_ptr;
+      for (; remains >= batch; remains -= batch, p_dst += batch, p_src += batch)
+        caffe_gpu_copy_async(batch, p_src, p_dst, stream);
+      if (remains)
+        caffe_gpu_copy_async(remains, p_src, p_dst, stream);
+    }
+    else
+      caffe_gpu_copy_async(dst_count, src_ptr, dst_ptr, stream);
   }
 }
 
