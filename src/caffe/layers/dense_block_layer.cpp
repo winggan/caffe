@@ -572,7 +572,8 @@ void DenseBlockLayer<Dtype>::setupShapeForInternalBlobs(const Blob<Dtype>* botto
   for (size_t i = 0; i < bottleneck_inter_.size(); i++)
     bottleneck_inter_[i]->Reshape(shape);
 
-  workspace_count += 2*bottleneck_inter_.size() * bottleneck_inter_[0]->count();
+  if (use_bottleneck_)
+    workspace_count += 2*bottleneck_inter_.size() * bottleneck_inter_[0]->count();
   LOG(INFO) << "workspace_count = " << workspace_count;
 
   for (size_t i = 0; i < conv3x3_inter_.size(); i++)
