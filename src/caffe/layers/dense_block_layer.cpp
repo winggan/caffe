@@ -176,6 +176,8 @@ template <typename Dtype>
 inline static void logLayerBlobs(const shared_ptr<Layer<Dtype> >& layer, const LayerParameter param)
 {
   LOG(INFO) << param.name() << "(" << param.type() << "): blobs_.size() = " << layer->blobs().size();
+  for (size_t i = 0; i < layer->blobs().size(); i ++)
+    LOG(INFO) << "  [" << i << "] shape = " << layer->blobs()[i]->shape_string();
 }
 
 // return the output blob name
@@ -259,7 +261,7 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   }
 #endif // USE_CUDNN
 
-  generataeLayerParamsForBlock();
+  generateLayerParamsForBlock();
 
   need_propagate_down_.resize(1, true);
 
@@ -305,12 +307,7 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
 
   // invoke LayerSetUp for every internal layer
   vector<shared_ptr<Blob<Dtype> > >& expect_blobs(expect_blobs_);
-  pre_bn_layer_->LayerSetUp(bottom, top);
-  {
-    append_back(expect_blobs, pre_bn_layer_->blobs());
-    logLayerBlobs(pre_bn_layer_, pre_bn_param_);
-  }
-  
+    
   for (int l = 0; l < num_layers_; l++)
   {
     vector<Blob<Dtype>*> the_input_lth(1, input_lth_[l].get());
@@ -320,10 +317,13 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
     if (use_bottleneck_)
     {
       vector<Blob<Dtype>*> the_bottleneck_inter_l(1, bottleneck_inter_[l].get());
-      
-      bottle_scale_layers_[l]->LayerSetUp(the_input_lth, the_conv3x3_inter_l);
+
+      bottle_bn_layers_[l]->LayerSetUp(the_input_lth, the_conv3x3_inter_l);
+      bottle_scale_layers_[l]->LayerSetUp(the_conv3x3_inter_l, the_conv3x3_inter_l);
       bottle_relu_layers_[l]->LayerSetUp(the_conv3x3_inter_l, the_conv3x3_inter_l);
       {
+        append_back(expect_blobs, bottle_bn_layers_[l]->blobs());
+        logLayerBlobs(bottle_bn_layers_[l], bottle_bn_params_[l]);
         append_back(expect_blobs, bottle_scale_layers_[l]->blobs());
         logLayerBlobs(bottle_scale_layers_[l], bottle_scale_params_[l]);
         append_back(expect_blobs, bottle_relu_layers_[l]->blobs());
@@ -331,14 +331,16 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       }
       
       conv1x1_layers_[l]->LayerSetUp(the_conv3x3_inter_l, the_bottleneck_inter_l);
-      bottle_bn_layers_[l]->LayerSetUp(the_bottleneck_inter_l, the_bottleneck_inter_l);
-      scale_layers_[l]->LayerSetUp(the_bottleneck_inter_l, the_bottleneck_inter_l);
-      relu_layers_[l]->LayerSetUp(the_bottleneck_inter_l, the_bottleneck_inter_l);
       {
         append_back(expect_blobs, conv1x1_layers_[l]->blobs());
         logLayerBlobs(conv1x1_layers_[l], conv1x1_params_[l]);
-        append_back(expect_blobs, bottle_bn_layers_[l]->blobs());
-        logLayerBlobs(bottle_bn_layers_[l], bottle_bn_params_[l]);
+      }
+      bn_layers_[l]->LayerSetUp(the_bottleneck_inter_l, the_bottleneck_inter_l);
+      scale_layers_[l]->LayerSetUp(the_bottleneck_inter_l, the_bottleneck_inter_l);
+      relu_layers_[l]->LayerSetUp(the_bottleneck_inter_l, the_bottleneck_inter_l);
+      {
+        append_back(expect_blobs, bn_layers_[l]->blobs());
+        logLayerBlobs(bn_layers_[l], bn_params_[l]);
         append_back(expect_blobs, scale_layers_[l]->blobs());
         logLayerBlobs(scale_layers_[l], scale_params_[l]);
         append_back(expect_blobs, relu_layers_[l]->blobs());
@@ -353,9 +355,12 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
     }
     else
     {
-      scale_layers_[l]->LayerSetUp(the_input_lth, the_conv3x3_inter_l);
+      bn_layers_[l]->LayerSetUp(the_input_lth, the_conv3x3_inter_l);
+      scale_layers_[l]->LayerSetUp(the_conv3x3_inter_l, the_conv3x3_inter_l);
       relu_layers_[l]->LayerSetUp(the_conv3x3_inter_l, the_conv3x3_inter_l);
       {
+        append_back(expect_blobs, bn_layers_[l]->blobs());
+        logLayerBlobs(bn_layers_[l], bn_params_[l]);
         append_back(expect_blobs, scale_layers_[l]->blobs());
         logLayerBlobs(scale_layers_[l], scale_params_[l]);
         append_back(expect_blobs, relu_layers_[l]->blobs());
@@ -376,12 +381,13 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       logLayerBlobs(dropout_layers_[l], dropout_params_[l]);
     }
 
-    bn_layers_[l]->LayerSetUp(the_output_lth, the_output_lth);
-    {
-      append_back(expect_blobs, bn_layers_[l]->blobs());
-      logLayerBlobs(bn_layers_[l], bn_params_[l]);
-    }
-
+    
+  }
+  
+  pre_bn_layer_->LayerSetUp(vector<Blob<Dtype>*>(1, &maps_diff_), vector<Blob<Dtype>*>(1, &maps_diff_));
+  {
+    append_back(expect_blobs, pre_bn_layer_->blobs());
+    logLayerBlobs(pre_bn_layer_, pre_bn_param_);
   }
 
   Blob<Dtype> tmp_top;
@@ -594,18 +600,18 @@ template <typename Dtype>
 void DenseBlockLayer<Dtype>::convertToPlainLayers(vector<LayerParameter>& layer_params)
 {
   layer_params.clear();
-  layer_params.push_back(pre_bn_param_);
   for (int l = 0; l < num_layers_; l++)
   {
     
     if (use_bottleneck_)
     {
+      layer_params.push_back(LayerParameter(bottle_bn_params_[l]));
       layer_params.push_back(LayerParameter(bottle_scale_params_[l]));
       layer_params.push_back(LayerParameter(bottle_relu_params_[l]));
       layer_params.push_back(LayerParameter(conv1x1_params_[l]));
-      layer_params.push_back(LayerParameter(bottle_bn_params_[l]));
     }
 
+    layer_params.push_back(LayerParameter(bn_params_[l]));
     layer_params.push_back(LayerParameter(scale_params_[l]));
     layer_params.push_back(LayerParameter(relu_params_[l]));
     layer_params.push_back(LayerParameter(conv3x3_params_[l]));
@@ -615,9 +621,9 @@ void DenseBlockLayer<Dtype>::convertToPlainLayers(vector<LayerParameter>& layer_
       layer_params.push_back(LayerParameter(dropout_params_[l]));
     }
 
-    layer_params.push_back(LayerParameter(bn_params_[l]));
     layer_params.push_back(LayerParameter(concat_params_[l]));
   }
+  layer_params.push_back(pre_bn_param_);
   layer_params.push_back(post_scale_param_);
   layer_params.push_back(post_relu_param_);
 
@@ -627,7 +633,7 @@ void DenseBlockLayer<Dtype>::convertToPlainLayers(vector<LayerParameter>& layer_
 }
 
 template <typename Dtype>
-void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
+void DenseBlockLayer<Dtype>::generateLayerParamsForBlock()
 {
   const LayerParameter &param_ = this->layer_param_;
   
@@ -711,9 +717,7 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
   std::string prefix = param_.name();
   std::string previous_feature_name = param_.bottom(0);
 
-  pre_bn_param_.CopyFrom(bn_param_tpl);
-  previous_feature_name = add_layer(previous_feature_name, pre_bn_param_, "pre_bn", false);
-
+  
   for (int l = 0; l < num_layers_; l++)
   {
     std::string the_num = _atoi(l);
@@ -721,19 +725,21 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
     
     if (use_bottleneck_)
     {
+      bottle_bn_params_.push_back(LayerParameter(bn_param_tpl));
+      blob = add_layer(blob, bottle_bn_params_.back(), "bottle_bn_" + the_num, false);
       bottle_scale_params_.push_back(LayerParameter(scale_param_tpl));
-      blob = add_layer(blob, bottle_scale_params_.back(), "bottle_scale_" + the_num, false);
+      blob = add_layer(blob, bottle_scale_params_.back(), "bottle_scale_" + the_num, true);
       bottle_relu_params_.push_back(LayerParameter(relu_param_tpl));
       blob = add_layer(blob, bottle_relu_params_.back(), "bottle_relu_" + the_num, true);
       conv1x1_params_.push_back(LayerParameter(conv1x1_param_tpl));
-      blob = add_layer(blob, conv1x1_params_.back(), "conv1x1_" + the_num, false);
-      bottle_bn_params_.push_back(LayerParameter(bn_param_tpl));
-      blob = add_layer(blob, bottle_bn_params_.back(), "bottle_bn_" + the_num, true);
+      blob = add_layer(blob, conv1x1_params_.back(), "conv1x1_" + the_num, false);      
     }
-    
+    // when not use bottleneck, in-place=>false to avoid modify feature maps data (stored in shared blob to be output)
+    bn_params_.push_back(LayerParameter(bn_param_tpl));
+    blob = add_layer(blob, bn_params_.back(), "bn_" + the_num, use_bottleneck_);
+
     scale_params_.push_back(LayerParameter(scale_param_tpl));
-    // when not use bottleneck, in-place=>false to avoid modify BN data (stored in shared blob to be output)
-    blob = add_layer(blob, scale_params_.back(), "scale_" + the_num, use_bottleneck_);
+    blob = add_layer(blob, scale_params_.back(), "scale_" + the_num, true);
     relu_params_.push_back(LayerParameter(relu_param_tpl));
     blob = add_layer(blob, relu_params_.back(), "relu_" + the_num, true);
     conv3x3_params_.push_back(LayerParameter(conv3x3_param_tpl));
@@ -743,12 +749,13 @@ void DenseBlockLayer<Dtype>::generataeLayerParamsForBlock()
       dropout_params_.push_back(LayerParameter(dropout_param_tpl));
       blob = add_layer(blob, dropout_params_.back(), "dropout_" + the_num, true);
     }
-    bn_params_.push_back(LayerParameter(bn_param_tpl));
-    blob = add_layer(blob, bn_params_.back(), "bn_" + the_num, true);
-    
+        
     concat_params_.push_back(LayerParameter(concat_param_tpl));
     previous_feature_name = add_concat_layer(previous_feature_name, blob, concat_params_.back(), "concat_" + the_num);
   }
+
+  pre_bn_param_.CopyFrom(bn_param_tpl);
+  previous_feature_name = add_layer(previous_feature_name, pre_bn_param_, "pre_bn", true);
   
   post_scale_param_.CopyFrom(scale_param_tpl);
   add_layer(concat_params_.back().top(0), post_scale_param_, "post_scale", false);
@@ -805,14 +812,8 @@ void DenseBlockLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
     }
   }
 #endif // USE_CUDNN
-  // invoke Reshape of the internal layers
-  {
-    vector<int> tmp_shape(input_lth_[0]->shape());
-    pre_bn_layer_->Reshape(bottom, vector<Blob<Dtype>*>(1, input_lth_[0].get()) );
-    CHECK(input_lth_[0]->shape() == tmp_shape)
-      << "[DenseBlock] Reshape error in pre_bn_layer_";
-  }
   
+  // invoke Reshape of the internal layers
   for (int l = 0; l < num_layers_; l++)
   {
     vector<Blob<Dtype>*> the_input_lth(1, input_lth_[l].get());
@@ -823,11 +824,12 @@ void DenseBlockLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
     {
       vector<Blob<Dtype>*> the_bottleneck_inter_l(1, bottleneck_inter_[l].get());
 
-      bottle_scale_layers_[l]->Reshape(the_input_lth, the_conv3x3_inter_l);
+      bottle_bn_layers_[l]->Reshape(the_input_lth, the_conv3x3_inter_l);
+      bottle_scale_layers_[l]->Reshape(the_conv3x3_inter_l, the_conv3x3_inter_l);
       bottle_relu_layers_[l]->Reshape(the_conv3x3_inter_l, the_conv3x3_inter_l);
 
       conv1x1_layers_[l]->Reshape(the_conv3x3_inter_l, the_bottleneck_inter_l);
-      bottle_bn_layers_[l]->Reshape(the_bottleneck_inter_l, the_bottleneck_inter_l);
+      bn_layers_[l]->Reshape(the_bottleneck_inter_l, the_bottleneck_inter_l);
       scale_layers_[l]->Reshape(the_bottleneck_inter_l, the_bottleneck_inter_l);
       relu_layers_[l]->Reshape(the_bottleneck_inter_l, the_bottleneck_inter_l);
 
@@ -836,7 +838,8 @@ void DenseBlockLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
     }
     else
     {
-      scale_layers_[l]->Reshape(the_input_lth, the_conv3x3_inter_l);
+      bn_layers_[l]->Reshape(the_input_lth, the_conv3x3_inter_l);
+      scale_layers_[l]->Reshape(the_conv3x3_inter_l, the_conv3x3_inter_l);
       relu_layers_[l]->Reshape(the_conv3x3_inter_l, the_conv3x3_inter_l);
 
       conv3x3_layers_[l]->Reshape(the_conv3x3_inter_l, the_output_lth);
@@ -848,10 +851,10 @@ void DenseBlockLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
       dropout_layers_[l]->Reshape(the_output_lth, the_output_lth);
     }
 
-    bn_layers_[l]->Reshape(the_output_lth, the_output_lth);
 
   }
 
+  pre_bn_layer_->Reshape(vector<Blob<Dtype>*>(1, &maps_diff_), vector<Blob<Dtype>*>(1, &maps_diff_));
   post_scale_layer_->Reshape(vector<Blob<Dtype>*>(1, &maps_diff_), top);
   post_relu_layer_->Reshape(top, top);
 
@@ -890,8 +893,9 @@ void DenseBlockLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
   
   CHECK_EQ(k0 + num_layers_ * growth_rate_, top[0]->shape()[1])
     << "Invalid top shape according to k0 + num_layers_ * growth_rate_";
-  
-  pre_bn_layer_->Forward(bottom, vector<Blob<Dtype>*>(1, input_lth_[0].get()) );
+
+  // copy the input data into working space 
+  caffe_copy(bottom[0]->count(), bottom[0]->cpu_data(), maps_diff_.mutable_cpu_data()); 
   
   for (int l = 0; l < num_layers_; l ++)
   {
@@ -903,12 +907,13 @@ void DenseBlockLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     {
       vector<Blob<Dtype>*> the_bottleneck_inter_l(1, bottleneck_inter_[l].get());
       
-      bottle_scale_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
+      bottle_bn_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
       // (in gpu) async "assemble" (original part) can start here to prepare for next conv block
+      bottle_scale_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
       bottle_relu_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
 
       conv1x1_layers_[l]->Forward(the_conv3x3_inter_l, the_bottleneck_inter_l);
-      bottle_bn_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
+      bn_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
       scale_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
       relu_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
 
@@ -917,8 +922,9 @@ void DenseBlockLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     }
     else
     {
-      scale_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
+      bn_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
       // (in gpu) async "assemble" (original part) can start here to prepare for next conv block
+      scale_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
       relu_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
 
       conv3x3_layers_[l]->Forward(the_conv3x3_inter_l, the_output_lth);
@@ -930,7 +936,6 @@ void DenseBlockLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       dropout_layers_[l]->Forward(the_output_lth, the_output_lth);
     }
 
-    bn_layers_[l]->Forward(the_output_lth, the_output_lth);
     
     // (in gpu) start async "assemble" (adding part) for this conv block
     assemble_maps(n, h, w, k0 + l * growth_rate_, growth_rate_, 
@@ -939,9 +944,12 @@ void DenseBlockLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     // (in gpu) synchronize "assemble" here so we can start next conv block
   }
   
-  // maps_diff_.data() store the output data (before post_scale_layer_), 
-  //which will be used in backward of the input scale of each conv block
+  // maps_diff_.data() store the output data (before post_scale_layer_, after pre_bn_layer_), 
+  // which will be used in backward of the input scale of each conv block
+  // Caffe's BatchNormLayer does not touch its top data in Backward, and we will use it to 
+  // infer the input of 1st conv in every conv block
   
+  pre_bn_layer_->Forward(vector<Blob<Dtype>*>(1, &maps_diff_), vector<Blob<Dtype>*>(1, &maps_diff_));
   post_scale_layer_->Forward(vector<Blob<Dtype>*>(1, &maps_diff_), top);
   post_relu_layer_->Forward(top, top);
   

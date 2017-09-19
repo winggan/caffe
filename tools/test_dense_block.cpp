@@ -81,7 +81,7 @@ int main1(int argc, char **argv)
   for (int i = 0; i < net->layers().size(); i ++)
     fprintf(stderr, "%3d %s\n", i, net->layer_names()[i].c_str());
 
-  std::string dense_block_name(argv[2]), dense_plain_name = dense_block_name + "_pre_bn";
+  std::string dense_block_name(argv[2]), cls_loss_name = "cls_loss";
   int dense_block_id = -1;
   int plain_dense_block_start = -1;
   int fc_id = -1, fc_2_id = -1;
@@ -90,8 +90,8 @@ int main1(int argc, char **argv)
     if (net->layer_names()[i] == dense_block_name)
       dense_block_id = i;
     
-    else if (net->layer_names()[i] == dense_plain_name)
-      plain_dense_block_start = i;
+    else if (net->layer_names()[i] == cls_loss_name)
+      plain_dense_block_start = i + 1;
     
     else if (net->layer_names()[i] == "fc")
       fc_id = i;
@@ -175,22 +175,22 @@ int main1(int argc, char **argv)
 
     //dump_array("plain", net->blob_by_name("dense_test_concat_0")->count(), net->blob_by_name("dense_test_concat_0")->gpu_data());
  
-    net->Backward();    
+    //net->Backward();    
  
-    for (int i = plain_dense_block_start, offset = 0; i < fc_2_id; i ++)
-    {
-      LOG(INFO) << "Layer " << net->layer_names()[i];
-      for (int b = 0; b < net->layers()[i]->blobs().size(); b ++, offset ++)
-      {
-        CHECK(net->layers()[dense_block_id]->blobs()[offset]->shape() == net->layers()[i]->blobs()[b]->shape())
-          << "param blob shape not match at " << b << " of (" << i << ") " << net->layer_names()[i];
-        Dtype max_diff = array_max_diff(net->layers()[dense_block_id]->blobs()[offset]->count(),
-                                        net->layers()[dense_block_id]->blobs()[offset]->cpu_diff(),
-                                        net->layers()[i]->blobs()[b]->cpu_diff() );
-        LOG(INFO) << "[" << b << "] " << net->layers()[dense_block_id]->blobs()[offset]->shape_string()  
-                  << " max_diff = " << max_diff;  
-      }
-    }
+    //for (int i = plain_dense_block_start, offset = 0; i < fc_2_id; i ++)
+    //{
+    //  LOG(INFO) << "Layer " << net->layer_names()[i];
+    //  for (int b = 0; b < net->layers()[i]->blobs().size(); b ++, offset ++)
+    //  {
+    //    CHECK(net->layers()[dense_block_id]->blobs()[offset]->shape() == net->layers()[i]->blobs()[b]->shape())
+    //      << "param blob shape not match at " << b << " of (" << i << ") " << net->layer_names()[i];
+    //    Dtype max_diff = array_max_diff(net->layers()[dense_block_id]->blobs()[offset]->count(),
+    //                                    net->layers()[dense_block_id]->blobs()[offset]->cpu_diff(),
+    //                                    net->layers()[i]->blobs()[b]->cpu_diff() );
+    //    LOG(INFO) << "[" << b << "] " << net->layers()[dense_block_id]->blobs()[offset]->shape_string()  
+    //              << " max_diff = " << max_diff;  
+    //  }
+    //}
      
   }
   return 0;

@@ -72,7 +72,7 @@ class DenseBlockLayer : public Layer<Dtype>
 
  protected:
   
-  void generataeLayerParamsForBlock();
+  void generateLayerParamsForBlock();
   void setupShapeForInternalBlobs(const Blob<Dtype>* bottom);
   void setupMemoryForInternalBlobs(Blob<Dtype>* bottom, Blob<Dtype>* top);
 
