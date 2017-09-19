@@ -424,8 +424,9 @@ void DenseBlockLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
 
   CHECK_EQ(k0 + num_layers_ * growth_rate_, top[0]->shape()[1])
     << "Invalid top shape according to k0 + num_layers_ * growth_rate_";
-
-  pre_bn_layer_->Forward(bottom, vector<Blob<Dtype>*>(1, input_lth_[0].get()));
+  
+  // copy the input data into working space 
+  caffe_copy(bottom[0]->count(), bottom[0]->gpu_data(), maps_diff_.mutable_gpu_data());
 
   for (int l = 0; l < num_layers_; l++)
   {
@@ -436,35 +437,19 @@ void DenseBlockLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     if (use_bottleneck_)
     {
       vector<Blob<Dtype>*> the_bottleneck_inter_l(1, bottleneck_inter_[l].get());
-#ifdef USE_CUDNN
-      dense_block::ScaleLayerFastForward(cudnn_handle_, 
-        input_desc_[l], the_input_lth[0],
-        input_desc_[l], the_conv3x3_inter_l[0],
-        input_scale_bias_desc_[l], (ScaleLayer<Dtype>*)(bottle_scale_layers_[l].get())
-      );
-#else
-      bottle_scale_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
-#endif
-      // (in gpu) async "assemble" (original part) can start here to prepare for next conv block
+
+	  bottle_bn_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
+	  // (in gpu) async "assemble" (original part) can start here to prepare for next conv block
       assemble_maps_gpu_origin_part(n, h, w, k0 + l * growth_rate_, growth_rate_,
         maps_diff_.mutable_gpu_data(), (const Dtype*)NULL /*output_lth_[l]->gpu_data()*/, dataCopyStream_);
 
-      bottle_relu_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
+	  bottle_scale_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
+	  bottle_relu_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
 
       conv1x1_layers_[l]->Forward(the_conv3x3_inter_l, the_bottleneck_inter_l);
-      bottle_bn_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
-#ifdef USE_CUDNN
-      caffe_copy(bottleneck_scale_tmp_[l]->count(), 
-                 the_bottleneck_inter_l[0]->gpu_data(), 
-                 bottleneck_scale_tmp_[l]->mutable_gpu_data());
-      dense_block::ScaleLayerFastForward(cudnn_handle_,
-        bottleneck_inter_desc_, bottleneck_scale_tmp_[l].get(),
-        bottleneck_inter_desc_, the_bottleneck_inter_l[0],
-        bottleneck_scale_bias_desc_, (ScaleLayer<Dtype>*)(scale_layers_[l].get())
-      );
-#else
-      scale_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
-#endif
+
+	  bn_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
+	  scale_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
       relu_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
 
       conv3x3_layers_[l]->Forward(the_bottleneck_inter_l, the_output_lth);
@@ -472,20 +457,14 @@ void DenseBlockLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     }
     else
     {
-#ifdef USE_CUDNN
-      dense_block::ScaleLayerFastForward(cudnn_handle_,
-        input_desc_[l], the_input_lth[0],
-        input_desc_[l], the_conv3x3_inter_l[0],
-        input_scale_bias_desc_[l], (ScaleLayer<Dtype>*)(scale_layers_[l].get())
-      );
-#else
-      scale_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
-#endif
+      bn_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
+
       // (in gpu) async "assemble" (original part) can start here to prepare for next conv block
       assemble_maps_gpu_origin_part(n, h, w, k0 + l * growth_rate_, growth_rate_,
         maps_diff_.mutable_gpu_data(), (const Dtype*)NULL /*output_lth_[l]->gpu_data()*/, dataCopyStream_);
 
-      relu_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
+	  scale_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
+	  relu_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
 
       conv3x3_layers_[l]->Forward(the_conv3x3_inter_l, the_output_lth);
 
@@ -496,7 +475,6 @@ void DenseBlockLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
       dropout_layers_[l]->Forward(the_output_lth, the_output_lth);
     }
 
-    bn_layers_[l]->Forward(the_output_lth, the_output_lth);
 
     // (in gpu) start async "assemble" (adding part) for this conv block
     //assemble_maps(n, h, w, k0 + l * growth_rate_, growth_rate_,
@@ -508,17 +486,13 @@ void DenseBlockLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     CUDA_CHECK(cudaStreamSynchronize(dataCopyStream_));
   }
 
-  // maps_diff_.data() store the output data (before post_scale_layer_), 
-  //which will be used in backward of the input scale of each conv block
-#ifdef USE_CUDNN
-  dense_block::ScaleLayerFastForward(cudnn_handle_,
-    final_output_desc_, &maps_diff_,
-    final_output_desc_, top[0],
-    scale_bias_desc_, (ScaleLayer<Dtype>*)(post_scale_layer_.get())
-  );
-#else
+  // maps_diff_.data() store the output data (before post_scale_layer_, after pre_bn_layer_), 
+  // which will be used in backward of the input scale of each conv block
+  // Caffe's BatchNormLayer does not touch its top data in Backward, and we will use it to 
+  // infer the input of 1st conv in every conv block
+
+  pre_bn_layer_->Forward(vector<Blob<Dtype>*>(1, &maps_diff_), vector<Blob<Dtype>*>(1, &maps_diff_));
   post_scale_layer_->Forward(vector<Blob<Dtype>*>(1, &maps_diff_), top);
-#endif
   post_relu_layer_->Forward(top, top);
 }
 
@@ -536,15 +510,9 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
     << "Invalid top shape according to k0 + num_layers_ * growth_rate_";
     
   post_relu_layer_->Backward(top, need_propagate_down_, top);
-#ifdef USE_CUDNN
-  dense_block::ScaleLayerFastBackward(cudnn_handle_,
-    scale_bias_desc_, (ScaleLayer<Dtype>*)(post_scale_layer_.get()),
-    final_output_desc_, top[0],
-    final_output_desc_, &maps_diff_
-  );
-#else
   post_scale_layer_->Backward(top, need_propagate_down_, vector<Blob<Dtype>*>(1, &maps_diff_));
-#endif
+  pre_bn_layer_->Backward(vector<Blob<Dtype>*>(1, &maps_diff_), need_propagate_down_, vector<Blob<Dtype>*>(1, &maps_diff_));
+  // maps_diff still hold the data of feature maps (after BN, before Scale)
 
   for (int l = num_layers_ - 1; l >= 0 ; l --)
   {
@@ -571,7 +539,6 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
     disassemble_maps_gpu_origin_part(n, h, w, k0 + l * growth_rate_, growth_rate_,
       maps_diff_.mutable_gpu_diff(), (Dtype*)NULL /*output_lth_[l]->mutable_gpu_diff()*/, diffCopyStream_);
     
-    bn_layers_[l]->Backward(the_output_lth, need_propagate_down_, the_output_lth);
     
     if (use_dropout_)
     {
@@ -585,49 +552,24 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
       conv3x3_layers_[l]->Backward(the_output_lth, need_propagate_down_, the_bottleneck_inter_l);
       
       relu_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_bottleneck_inter_l);
-#ifdef USE_CUDNN
-      dense_block::ScaleLayerFastBackward(cudnn_handle_,
-        bottleneck_scale_bias_desc_, (ScaleLayer<Dtype>*)(scale_layers_[l].get()),
-        bottleneck_inter_desc_, the_bottleneck_inter_l[0],
-        bottleneck_inter_desc_, bottleneck_scale_tmp_[l].get()
-      );
-      caffe_copy(bottleneck_scale_tmp_[l]->count(),
-        bottleneck_scale_tmp_[l]->gpu_diff(),
-        the_bottleneck_inter_l[0]->mutable_gpu_diff());
-#else
       scale_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_bottleneck_inter_l);
-#endif
-      bottle_bn_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_bottleneck_inter_l);
-      
+      bn_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_bottleneck_inter_l);
+
       // (in gpu) synchronize "disassemble" (original part) so we can continue the preparation 
       // for Backward of conv3x3 in the conv block
       CUDA_CHECK(cudaStreamSynchronize(dataCopyStream_));
       CUDA_CHECK(cudaStreamSynchronize(diffCopyStream_));
       
       // re-calculate the bottom_data of conv1x1 from bottle_scale_layers_[l] and bottle_relu_layers_[l]
-#ifdef USE_CUDNN
-      dense_block::ScaleLayerFastForward(cudnn_handle_,
-        input_desc_[l], the_input_lth[0],
-        input_desc_[l], the_conv3x3_inter_l[0],
-        input_scale_bias_desc_[l], (ScaleLayer<Dtype>*)(bottle_scale_layers_[l].get())
-      );
-#else
+      // input_lth_[l] (maps_diff_) hold the data after BN, only scale is needed
       bottle_scale_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
-#endif
       bottle_relu_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
       
       conv1x1_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_conv3x3_inter_l);
       
       bottle_relu_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_conv3x3_inter_l);
-#ifdef USE_CUDNN
-      dense_block::ScaleLayerFastBackward(cudnn_handle_,
-        input_scale_bias_desc_[l], (ScaleLayer<Dtype>*)(bottle_scale_layers_[l].get()),
-        input_desc_[l], the_conv3x3_inter_l[0],
-        input_desc_[l], the_input_lth[0]
-      );
-#else
-      bottle_scale_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_input_lth);
-#endif
+      bottle_scale_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_conv3x3_inter_l);
+      bottle_bn_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_input_lth);
     }
     else
     {
@@ -637,47 +579,33 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
       CUDA_CHECK(cudaStreamSynchronize(diffCopyStream_));
       
       // re-calculate the bottom_data of conv3x3 from scale_layers_[l] and relu_layers_[l]
-#ifdef USE_CUDNN
-      dense_block::ScaleLayerFastForward(cudnn_handle_,
-        input_desc_[l], the_input_lth[0],
-        input_desc_[l], the_conv3x3_inter_l[0],
-        input_scale_bias_desc_[l], (ScaleLayer<Dtype>*)(scale_layers_[l].get())
-      );
-#else
+
       scale_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
-#endif
       relu_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
       
       conv3x3_layers_[l]->Backward(the_output_lth, need_propagate_down_, the_conv3x3_inter_l);
       
       relu_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_conv3x3_inter_l);
-#ifdef USE_CUDNN
-      dense_block::ScaleLayerFastBackward(cudnn_handle_,
-        input_scale_bias_desc_[l], (ScaleLayer<Dtype>*)(scale_layers_[l].get()),
-        input_desc_[l], the_conv3x3_inter_l[0],
-        input_desc_[l], the_input_lth[0]
-      );
-#else
-      scale_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_input_lth);
-#endif
+      scale_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_conv3x3_inter_l);
+      bn_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_input_lth);
     }
     
     { // add the diff together before continue
       const int count = input_lth_[l]->count();
       Dtype* target_ptr;
       const Dtype* adding_in_ptr;
-      if (l > 0)
+      //if (l > 0) // in the original structure we will always copy the diff to bottom.diff
       {
         target_ptr = maps_diff_.mutable_gpu_diff(); 
         adding_in_ptr = tmp_diff_.gpu_diff(); // diff of input_lth_[l]
       }
-      else
-      {
-        // for the first conv block, store the sum of diff in tmp_diff_.diff (input_lth_[0].diff)
-        // because pre_bn_layer_ treat input_lth_[0] as the top blob.
-        target_ptr = tmp_diff_.mutable_gpu_diff(); // diff of input_lth_[l]
-        adding_in_ptr = maps_diff_.gpu_diff();
-      }
+      //else
+      //{
+      //  // for the first conv block, store the sum of diff in tmp_diff_.diff (input_lth_[0].diff)
+      //  // because pre_bn_layer_ treat input_lth_[0] as the top blob.
+      //  target_ptr = tmp_diff_.mutable_gpu_diff(); // diff of input_lth_[l]
+      //  adding_in_ptr = maps_diff_.gpu_diff();
+      //}
       
       // in gpu caffe_gpu_axpy is used
       //caffe_axpy(count, Dtype(1.), adding_in_ptr, target_ptr);
@@ -685,8 +613,7 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
     }
   }
   
-  pre_bn_layer_->Backward(vector<Blob<Dtype>*>(1, input_lth_[0].get()), need_propagate_down_, bottom);
-    
+  caffe_copy(bottom[0]->count(), maps_diff_.gpu_diff(), bottom[0]->mutable_gpu_diff());
 }
 
 INSTANTIATE_LAYER_GPU_FUNCS(DenseBlockLayer);
