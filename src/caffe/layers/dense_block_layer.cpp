@@ -252,8 +252,14 @@ void DenseBlockLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       CUDNN_CHECK(cudnnCreateTensorDescriptor(&input_desc_[i]));
       CUDNN_CHECK(cudnnCreateTensorDescriptor(&input_scale_bias_desc_[i]));
     }
+    bn_mean_var_.resize(num_layers_);
+    for (int i = 0; i < num_layers_; i++)
+      bn_mean_var_[i].reset(new Blob<Dtype>);
     if (use_bottleneck_)
     {
+      bottleneck_bn_mean_var_.resize(num_layers_);
+      for (int i = 0; i < num_layers_; i++)
+        bottleneck_bn_mean_var_[i].reset(new Blob<Dtype>);
       bottleneck_scale_tmp_.resize(num_layers_);
       for (int i = 0; i < num_layers_; i++)
         bottleneck_scale_tmp_[i].reset(new Blob<Dtype>);
@@ -801,6 +807,26 @@ void DenseBlockLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
       CUDNN_CHECK(cudnnSetTensor4dDescriptor(input_desc_[l], CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, n, k0 + l * growth_rate_, h, w));
       CUDNN_CHECK(cudnnSetTensor4dDescriptor(input_scale_bias_desc_[l], CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, 1, k0 + l * growth_rate_, 1, 1));
     }
+    
+    {
+      vector<int> _shape(1, maps_diff_.shape(1));
+      pre_bn_mean_var_.Reshape(_shape);
+      if (use_bottleneck_)
+        for (int i = 0; i < num_layers_; i++)
+        {
+          _shape[0] = input_lth_[i]->shape(1);
+          bottleneck_bn_mean_var_[i]->Reshape(_shape);
+          _shape[0] = bottleneck_rate_ * growth_rate_;
+          bn_mean_var_[i]->Reshape(_shape);
+        }
+      else
+        for (int i = 0; i < num_layers_; i++)
+        {
+          _shape[0] = input_lth_[i]->shape(1);
+          bn_mean_var_[i]->Reshape(_shape);
+        }
+    }
+
     if (use_bottleneck_)
     {
       bottleneck_scale_tmp_[0]->ReshapeLike(*bottleneck_inter_[0]);

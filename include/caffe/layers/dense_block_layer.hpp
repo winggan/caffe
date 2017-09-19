@@ -139,6 +139,9 @@ class DenseBlockLayer : public Layer<Dtype>
 
   vector<shared_ptr<Blob<Dtype> > > bottleneck_scale_tmp_;
 
+  Blob<Dtype> pre_bn_mean_var_;
+  vector<shared_ptr<Blob<Dtype> > > bottleneck_bn_mean_var_, bn_mean_var_;
+
   cudnnHandle_t cudnn_handle_;
 
 #endif // USE_CUDNN
