@@ -971,6 +971,8 @@ void DenseBlockLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
     
   post_relu_layer_->Backward(top, need_propagate_down_, top);
   post_scale_layer_->Backward(top, need_propagate_down_, vector<Blob<Dtype>*>(1, &maps_diff_));
+  pre_bn_layer_->Backward(vector<Blob<Dtype>*>(1, &maps_diff_), need_propagate_down_, vector<Blob<Dtype>*>(1, &maps_diff_));
+  // maps_diff still hold the data of feature maps (after BN, before Scale)
   
   for (int l = num_layers_ - 1; l >= 0 ; l --)
   {
@@ -991,7 +993,6 @@ void DenseBlockLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
     // (in gpu) start async "disassemble" (original part) to prepare for Backward of 
     // earlier conv in the conv block
     
-    bn_layers_[l]->Backward(the_output_lth, need_propagate_down_, the_output_lth);
     
     if (use_dropout_)
     {
@@ -1006,19 +1007,21 @@ void DenseBlockLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
       
       relu_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_bottleneck_inter_l);
       scale_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_bottleneck_inter_l);
-      bottle_bn_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_bottleneck_inter_l);
+      bn_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_bottleneck_inter_l);
       
       // (in gpu) synchronize "disassemble" (original part) so we can continue the preparation 
       // for Backward of conv3x3 in the conv block
       
       // re-calculate the bottom_data of conv1x1 from bottle_scale_layers_[l] and bottle_relu_layers_[l]
+      // input_lth_[l] (maps_diff_) hold the data after BN, only scale is needed
       bottle_scale_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
       bottle_relu_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
       
       conv1x1_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_conv3x3_inter_l);
       
       bottle_relu_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_conv3x3_inter_l);
-      bottle_scale_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_input_lth);
+      bottle_scale_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_conv3x3_inter_l);
+      bottle_bn_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_input_lth);
     }
     else
     {
@@ -1032,33 +1035,33 @@ void DenseBlockLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
       conv3x3_layers_[l]->Backward(the_output_lth, need_propagate_down_, the_conv3x3_inter_l);
       
       relu_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_conv3x3_inter_l);
-      scale_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_input_lth);
+      scale_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_conv3x3_inter_l);
+      bn_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_input_lth);
     }
     
     { // add the diff together before continue
       const int count = input_lth_[l]->count();
       Dtype* target_ptr;
       const Dtype* adding_in_ptr;
-      if (l > 0)
+      //if (l > 0) // in the original structure we will always copy the diff to bottom.diff
       {
         target_ptr = maps_diff_.mutable_cpu_diff(); 
         adding_in_ptr = tmp_diff_.cpu_diff(); // diff of input_lth_[l]
       }
-      else
-      {
-        // for the first conv block, store the sum of diff in tmp_diff_.diff (input_lth_[0].diff)
-        // because pre_bn_layer_ treat input_lth_[0] as the top blob.
-        target_ptr = tmp_diff_.mutable_cpu_diff(); // diff of input_lth_[l]
-        adding_in_ptr = maps_diff_.cpu_diff();
-      }
+      //else
+      //{
+      //  // for the first conv block, store the sum of diff in tmp_diff_.diff (input_lth_[0].diff)
+      //  // because pre_bn_layer_ treat input_lth_[0] as the top blob.
+      //  target_ptr = tmp_diff_.mutable_cpu_diff(); // diff of input_lth_[l]
+      //  adding_in_ptr = maps_diff_.cpu_diff();
+      //}
       
       // in gpu caffe_gpu_axpy is used
       caffe_axpy(count, Dtype(1.), adding_in_ptr, target_ptr);
     }
   }
   
-  pre_bn_layer_->Backward(vector<Blob<Dtype>*>(1, input_lth_[0].get()), need_propagate_down_, bottom);
-    
+  caffe_copy(bottom[0]->count(), maps_diff_.cpu_diff(), bottom[0]->mutable_cpu_diff()); 
 }
 
 INSTANTIATE_CLASS(DenseBlockLayer);
