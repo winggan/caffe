@@ -628,9 +628,22 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
 #ifdef USE_CUDNN
 
   post_relu_layer_->Backward(top, need_propagate_down_, top);
-  post_scale_layer_->Backward(top, need_propagate_down_, vector<Blob<Dtype>*>(1, &maps_diff_));
-  pre_bn_layer_->Backward(vector<Blob<Dtype>*>(1, &maps_diff_), need_propagate_down_, vector<Blob<Dtype>*>(1, &maps_diff_));
-  // maps_diff still hold the data of feature maps (after BN, before Scale)
+  //post_scale_layer_->Backward(top, need_propagate_down_, vector<Blob<Dtype>*>(1, &maps_diff_));
+  //pre_bn_layer_->Backward(vector<Blob<Dtype>*>(1, &maps_diff_), need_propagate_down_, vector<Blob<Dtype>*>(1, &maps_diff_));
+  // maps_diff still hold the data of feature maps (before BN)
+  {
+    CUDNN_CHECK(cudnnBatchNormalizationBackward(
+      cudnn_handle_, CUDNN_BATCHNORM_SPATIAL, &one, &zero, &one, &one, 
+      final_output_desc_, maps_diff_.gpu_data(), 
+      final_output_desc_, top[0]->gpu_diff(), 
+      final_output_desc_, maps_diff_.mutable_gpu_diff(), 
+      scale_bias_desc_, post_scale_layer_->blobs()[0]->gpu_data(),
+      post_scale_layer_->blobs()[0]->mutable_gpu_diff(),
+      post_scale_layer_->blobs()[1]->mutable_gpu_diff(),
+      pre_bn_layer_->layer_param().batch_norm_param().eps(),
+      pre_bn_mean_var_.gpu_data(), pre_bn_mean_var_.gpu_diff()
+    ));
+  }
 
   for (int l = num_layers_ - 1; l >= 0; l--)
   {
@@ -680,14 +693,43 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
 
       // re-calculate the bottom_data of conv1x1 from bottle_scale_layers_[l] and bottle_relu_layers_[l]
       // input_lth_[l] (maps_diff_) hold the data after BN, only scale is needed
-      bottle_scale_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
+      //bottle_scale_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
+      {
+        Dtype *tmp_space = pre_bn_mean_var_.mutable_gpu_diff();
+        caffe_gpu_powx(
+          bottleneck_bn_mean_var_[l]->count(), 
+          bottleneck_bn_mean_var_[l]->gpu_diff(), 
+          Dtype(-2.), tmp_space
+        ); // Backward of pre_bn_layer_ is complete, space of pre_bn_mean_var_ can be reuse
+        CUDNN_CHECK(cudnnBatchNormalizationForwardInference(
+          cudnn_handle_, CUDNN_BATCHNORM_SPATIAL, &one, &zero,
+          input_desc_[l], the_input_lth[0]->gpu_data(),
+          input_desc_[l], the_conv3x3_inter_l[0]->mutable_gpu_data(),
+          input_scale_bias_desc_[l], bottle_scale_layers_[l]->blobs()[0]->gpu_data(), bottle_scale_layers_[l]->blobs()[1]->gpu_data(),
+          bottleneck_bn_mean_var_[l]->gpu_data(), tmp_space,
+          bottle_bn_layers_[l]->layer_param().batch_norm_param().eps()
+        ));
+      }
       bottle_relu_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
 
       conv1x1_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_conv3x3_inter_l);
 
       bottle_relu_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_conv3x3_inter_l);
-      bottle_scale_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_conv3x3_inter_l);
-      bottle_bn_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_input_lth);
+      //bottle_scale_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_conv3x3_inter_l);
+      //bottle_bn_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_input_lth);
+      {
+        CUDNN_CHECK(cudnnBatchNormalizationBackward(
+          cudnn_handle_, CUDNN_BATCHNORM_SPATIAL, &one, &zero, &one, &one, 
+          input_desc_[l], the_input_lth[0]->gpu_data(), 
+          input_desc_[l], the_conv3x3_inter_l[0]->gpu_diff(), 
+          input_desc_[l], the_input_lth[0]->mutable_gpu_diff(), 
+          input_scale_bias_desc_[l], bottle_scale_layers_[l]->blobs()[0]->gpu_data(),
+          bottle_scale_layers_[l]->blobs()[0]->mutable_gpu_diff(),
+          bottle_scale_layers_[l]->blobs()[1]->mutable_gpu_diff(),
+          bottle_bn_layers_[l]->layer_param().batch_norm_param().eps(),
+          bottleneck_bn_mean_var_[l]->gpu_data(), bottleneck_bn_mean_var_[l]->gpu_diff()
+        ));
+      }
     }
     else
     {
