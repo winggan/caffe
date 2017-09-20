@@ -423,6 +423,53 @@ static void updateMovingAverage(BatchNormLayer<Dtype>* layer)
   layer->blobs()[2]->mutable_cpu_data()[0] *= moving_average_fraction_;
   layer->blobs()[2]->mutable_cpu_data()[0] += 1;
 }
+#if 1 // debug utils
+static cudnnTensorDescriptor_t copyTensor4dDesc(cudnnTensorDescriptor_t tensorDesc)
+{
+  cudnnTensorDescriptor_t ret;
+  CUDNN_CHECK(cudnnCreateTensorDescriptor(&ret));
+  
+  int n, c, h, w, ns, cs, hs, ws;
+  cudnnDataType_t type;
+  CUDNN_CHECK(cudnnGetTensor4dDescriptor(tensorDesc, &type, &n, &c, &h, &w, &ns, &cs, &hs, &ws));
+
+  CUDNN_CHECK(cudnnSetTensor4dDescriptor(ret, CUDNN_TENSOR_NCHW, type, n, c, h, w));
+  return ret;
+}
+static void dumpTensorShape(cudnnTensorDescriptor_t tensorDesc)
+{
+  char tmp[20];
+  string ret = "";
+  int maxDim = 100, actualDim;
+  vector<int> dim(maxDim, 0), stride(maxDim, 0);
+  cudnnDataType_t type;
+  CUDNN_CHECK(cudnnGetTensorNdDescriptor(tensorDesc, maxDim, &type, &actualDim, dim.data(), stride.data()));
+  for (int i = 0; i < actualDim; i ++)
+  {
+    sprintf(tmp, "%d(%d) ", dim[i], stride[i]);
+    ret += tmp;
+  }
+  LOG(INFO) << ret;
+}
+template <typename Dtype>
+static void fillArray(int count, Dtype *dst, Dtype val)
+{
+  for (int i = 0; i < count; i ++)
+    dst[i] = val;
+}
+template <typename Dtype>
+static void fillArray(int count, Dtype *dst)
+{
+  for (int i = 0; i < count; i ++)
+    dst[i] = (rand() % 2 ? -1 : 1) * Dtype(rand() - RAND_MAX / 2) * 20 / RAND_MAX;
+}
+#endif // debug utils
+template <typename Dtype>
+inline static double cudnnGetBNEps(Dtype val)
+{
+  double ret(val);
+  return ret < CUDNN_BN_MIN_EPSILON ? CUDNN_BN_MIN_EPSILON : ret;
+}
 
 template <typename Dtype>
 void DenseBlockLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
@@ -464,7 +511,7 @@ void DenseBlockLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
           1 / bottle_bn_layers_[l]->blobs()[2]->cpu_data()[0],
           bottle_bn_layers_[l]->blobs()[0]->mutable_gpu_data(),
           bottle_bn_layers_[l]->blobs()[1]->mutable_gpu_data(),
-          bottle_bn_layers_[l]->layer_param().batch_norm_param().eps(),
+          cudnnGetBNEps(bottle_bn_layers_[l]->layer_param().batch_norm_param().eps()),
           bottleneck_bn_mean_var_[l]->mutable_gpu_data(), bottleneck_bn_mean_var_[l]->mutable_gpu_diff()
         ));
       }
@@ -533,7 +580,7 @@ void DenseBlockLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
       1 / pre_bn_layer_->blobs()[2]->cpu_data()[0],
       pre_bn_layer_->blobs()[0]->mutable_gpu_data(),
       pre_bn_layer_->blobs()[1]->mutable_gpu_data(),
-      pre_bn_layer_->layer_param().batch_norm_param().eps(),
+      cudnnGetBNEps(pre_bn_layer_->layer_param().batch_norm_param().eps()),
       pre_bn_mean_var_.mutable_gpu_data(), pre_bn_mean_var_.mutable_gpu_diff()
     ));
   }
@@ -627,6 +674,8 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
 
 #ifdef USE_CUDNN
 
+  Dtype one(1.f), zero(0.f);
+
   post_relu_layer_->Backward(top, need_propagate_down_, top);
   //post_scale_layer_->Backward(top, need_propagate_down_, vector<Blob<Dtype>*>(1, &maps_diff_));
   //pre_bn_layer_->Backward(vector<Blob<Dtype>*>(1, &maps_diff_), need_propagate_down_, vector<Blob<Dtype>*>(1, &maps_diff_));
@@ -640,7 +689,7 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
       scale_bias_desc_, post_scale_layer_->blobs()[0]->gpu_data(),
       post_scale_layer_->blobs()[0]->mutable_gpu_diff(),
       post_scale_layer_->blobs()[1]->mutable_gpu_diff(),
-      pre_bn_layer_->layer_param().batch_norm_param().eps(),
+      cudnnGetBNEps(pre_bn_layer_->layer_param().batch_norm_param().eps()),
       pre_bn_mean_var_.gpu_data(), pre_bn_mean_var_.gpu_diff()
     ));
   }
@@ -707,7 +756,7 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
           input_desc_[l], the_conv3x3_inter_l[0]->mutable_gpu_data(),
           input_scale_bias_desc_[l], bottle_scale_layers_[l]->blobs()[0]->gpu_data(), bottle_scale_layers_[l]->blobs()[1]->gpu_data(),
           bottleneck_bn_mean_var_[l]->gpu_data(), tmp_space,
-          bottle_bn_layers_[l]->layer_param().batch_norm_param().eps()
+          cudnnGetBNEps(bottle_bn_layers_[l]->layer_param().batch_norm_param().eps())
         ));
       }
       bottle_relu_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
@@ -726,7 +775,7 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
           input_scale_bias_desc_[l], bottle_scale_layers_[l]->blobs()[0]->gpu_data(),
           bottle_scale_layers_[l]->blobs()[0]->mutable_gpu_diff(),
           bottle_scale_layers_[l]->blobs()[1]->mutable_gpu_diff(),
-          bottle_bn_layers_[l]->layer_param().batch_norm_param().eps(),
+          cudnnGetBNEps(bottle_bn_layers_[l]->layer_param().batch_norm_param().eps()),
           bottleneck_bn_mean_var_[l]->gpu_data(), bottleneck_bn_mean_var_[l]->gpu_diff()
         ));
       }
