@@ -525,8 +525,25 @@ void DenseBlockLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
 
       conv1x1_layers_[l]->Forward(the_conv3x3_inter_l, the_bottleneck_inter_l);
 
-      bn_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
-      scale_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
+      //bn_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
+      //scale_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
+      {
+        caffe_copy(the_bottleneck_inter_l[0]->count(),
+                   the_bottleneck_inter_l[0]->gpu_data(), 
+                   bottleneck_scale_tmp_[l]->mutable_gpu_data());
+        updateMovingAverage( (BatchNormLayer<Dtype>*)(bn_layers_[l].get()) );
+        CUDNN_CHECK(cudnnBatchNormalizationForwardTraining(
+          cudnn_handle_, CUDNN_BATCHNORM_SPATIAL, &one, &zero,
+          bottleneck_inter_desc_, bottleneck_scale_tmp_[l]->gpu_data(),
+          bottleneck_inter_desc_, the_bottleneck_inter_l[0]->mutable_gpu_data(),
+          bottleneck_scale_bias_desc_, scale_layers_[l]->blobs()[0]->gpu_data(), scale_layers_[l]->blobs()[1]->gpu_data(),
+          1 / bn_layers_[l]->blobs()[2]->cpu_data()[0],
+          bn_layers_[l]->blobs()[0]->mutable_gpu_data(),
+          bn_layers_[l]->blobs()[1]->mutable_gpu_data(),
+          cudnnGetBNEps(bn_layers_[l]->layer_param().batch_norm_param().eps()),
+          bn_mean_var_[l]->mutable_gpu_data(), bn_mean_var_[l]->mutable_gpu_diff()
+        ));
+      }
       relu_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
 
       conv3x3_layers_[l]->Forward(the_bottleneck_inter_l, the_output_lth);
@@ -746,8 +763,24 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
       conv3x3_layers_[l]->Backward(the_output_lth, need_propagate_down_, the_bottleneck_inter_l);
 
       relu_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_bottleneck_inter_l);
-      scale_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_bottleneck_inter_l);
-      bn_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_bottleneck_inter_l);
+      //scale_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_bottleneck_inter_l);
+      //bn_layers_[l]->Backward(the_bottleneck_inter_l, need_propagate_down_, the_bottleneck_inter_l);
+      {
+        CUDNN_CHECK(cudnnBatchNormalizationBackward(
+          cudnn_handle_, CUDNN_BATCHNORM_SPATIAL, &one, &zero, &one, &one, 
+          bottleneck_inter_desc_, bottleneck_scale_tmp_[l]->gpu_data(), 
+          bottleneck_inter_desc_, the_bottleneck_inter_l[0]->gpu_diff(), 
+          bottleneck_inter_desc_, bottleneck_scale_tmp_[l]->mutable_gpu_diff(), 
+          bottleneck_scale_bias_desc_, scale_layers_[l]->blobs()[0]->gpu_data(),
+          scale_layers_[l]->blobs()[0]->mutable_gpu_diff(),
+          scale_layers_[l]->blobs()[1]->mutable_gpu_diff(),
+          cudnnGetBNEps(bn_layers_[l]->layer_param().batch_norm_param().eps()),
+          bn_mean_var_[l]->gpu_data(), bn_mean_var_[l]->gpu_diff()
+        ));
+        caffe_copy(the_bottleneck_inter_l[0]->count(),
+                   bottleneck_scale_tmp_[l]->gpu_diff(),
+                   the_bottleneck_inter_l[0]->mutable_gpu_diff());
+      }
 
       // (in gpu) synchronize "disassemble" (original part) so we can continue the preparation 
       // for Backward of conv3x3 in the conv block
