@@ -534,13 +534,27 @@ void DenseBlockLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     }
     else
     {
-      bn_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
+      {
+        updateMovingAverage( (BatchNormLayer<Dtype>*)(bn_layers_[l].get()) );
+        CUDNN_CHECK(cudnnBatchNormalizationForwardTraining(
+          cudnn_handle_, CUDNN_BATCHNORM_SPATIAL, &one, &zero,
+          input_desc_[l], the_input_lth[0]->gpu_data(),
+          input_desc_[l], the_conv3x3_inter_l[0]->mutable_gpu_data(),
+          input_scale_bias_desc_[l], scale_layers_[l]->blobs()[0]->gpu_data(), scale_layers_[l]->blobs()[1]->gpu_data(),
+          1 / bn_layers_[l]->blobs()[2]->cpu_data()[0],
+          bn_layers_[l]->blobs()[0]->mutable_gpu_data(),
+          bn_layers_[l]->blobs()[1]->mutable_gpu_data(),
+          cudnnGetBNEps(bn_layers_[l]->layer_param().batch_norm_param().eps()),
+          bn_mean_var_[l]->mutable_gpu_data(), bn_mean_var_[l]->mutable_gpu_diff()
+        ));
+      }
+      //bn_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
 
       // (in gpu) async "assemble" (original part) can start here to prepare for next conv block
       assemble_maps_gpu_origin_part(n, h, w, k0 + l * growth_rate_, growth_rate_,
         maps_diff_.mutable_gpu_data(), (const Dtype*)NULL /*output_lth_[l]->gpu_data()*/, dataCopyStream_);
 
-      scale_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
+      //scale_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
       relu_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
 
       conv3x3_layers_[l]->Forward(the_conv3x3_inter_l, the_output_lth);
@@ -789,14 +803,43 @@ void DenseBlockLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
 
       // re-calculate the bottom_data of conv3x3 from scale_layers_[l] and relu_layers_[l]
 
-      scale_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
+      //scale_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
+      {
+        Dtype *tmp_space = pre_bn_mean_var_.mutable_gpu_diff();
+        caffe_gpu_powx(
+          bn_mean_var_[l]->count(), 
+          bn_mean_var_[l]->gpu_diff(), 
+          Dtype(-2.), tmp_space
+        ); // Backward of pre_bn_layer_ is complete, space of pre_bn_mean_var_ can be reuse
+        CUDNN_CHECK(cudnnBatchNormalizationForwardInference(
+          cudnn_handle_, CUDNN_BATCHNORM_SPATIAL, &one, &zero,
+          input_desc_[l], the_input_lth[0]->gpu_data(),
+          input_desc_[l], the_conv3x3_inter_l[0]->mutable_gpu_data(),
+          input_scale_bias_desc_[l], scale_layers_[l]->blobs()[0]->gpu_data(), scale_layers_[l]->blobs()[1]->gpu_data(),
+          bn_mean_var_[l]->gpu_data(), tmp_space,
+          cudnnGetBNEps(bn_layers_[l]->layer_param().batch_norm_param().eps())
+        ));
+      }
       relu_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
 
       conv3x3_layers_[l]->Backward(the_output_lth, need_propagate_down_, the_conv3x3_inter_l);
 
       relu_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_conv3x3_inter_l);
-      scale_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_conv3x3_inter_l);
-      bn_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_input_lth);
+      //scale_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_conv3x3_inter_l);
+      //bn_layers_[l]->Backward(the_conv3x3_inter_l, need_propagate_down_, the_input_lth);
+      {
+        CUDNN_CHECK(cudnnBatchNormalizationBackward(
+          cudnn_handle_, CUDNN_BATCHNORM_SPATIAL, &one, &zero, &one, &one, 
+          input_desc_[l], the_input_lth[0]->gpu_data(), 
+          input_desc_[l], the_conv3x3_inter_l[0]->gpu_diff(), 
+          input_desc_[l], the_input_lth[0]->mutable_gpu_diff(), 
+          input_scale_bias_desc_[l], scale_layers_[l]->blobs()[0]->gpu_data(),
+          scale_layers_[l]->blobs()[0]->mutable_gpu_diff(),
+          scale_layers_[l]->blobs()[1]->mutable_gpu_diff(),
+          cudnnGetBNEps(bn_layers_[l]->layer_param().batch_norm_param().eps()),
+          bn_mean_var_[l]->gpu_data(), bn_mean_var_[l]->gpu_diff()
+        ));
+      }
     }
 
     { // add the diff together before continue
