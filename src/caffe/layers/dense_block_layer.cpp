@@ -60,12 +60,12 @@ static inline void in_place_scale(const int count, Dtype alpha, Dtype* x)
     x[i] *= alpha;
 }
 template <>
-static inline void in_place_scale<float>(const int count, float alpha, float* x)
+inline void in_place_scale<float>(const int count, float alpha, float* x)
 {
   cblas_sscal(count, alpha, x, 1);
 }
 template <>
-static inline void in_place_scale<double>(const int count, double alpha, double* x)
+inline void in_place_scale<double>(const int count, double alpha, double* x)
 {
   cblas_dscal(count, alpha, x, 1);
 }
@@ -959,14 +959,14 @@ void DenseBlockLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
 
 #ifdef USE_CUDNN
 template <typename Dtype>
-int blobProtoCount(const BlobProto &p);
+static int blobProtoCount(const BlobProto &p);
 template <>
 int blobProtoCount<float>(const BlobProto &p) { return p.data_size(); }
 template <>
 int blobProtoCount<double>(const BlobProto &p) { return p.double_data_size(); }
 
 template <typename Dtype>
-void processBNParamBlob(const BlobProto &scale, BlobProto *mean, BlobProto *var);
+static void processBNParamBlob(const BlobProto &scale, BlobProto *mean, BlobProto *var);
 template <>
 void processBNParamBlob<float>(const BlobProto &scale, BlobProto *mean, BlobProto *var)
 {
