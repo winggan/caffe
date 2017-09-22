@@ -67,8 +67,11 @@ class DenseBlockLayer : public Layer<Dtype>
   virtual inline int ExactNumTopBlobs() const { return 1; }
 
   void convertToPlainLayers(vector<LayerParameter>& layer_params);
-
-
+  
+#ifdef USE_CUDNN
+  // rewrite for convert cudnn BN layers parameters back to caffe mode
+  virtual void ToProto(LayerParameter* param, bool write_diff = false);
+#endif // USE_CUDNN
 
  protected:
   
