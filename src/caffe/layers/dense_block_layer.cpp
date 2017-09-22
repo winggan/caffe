@@ -560,6 +560,95 @@ void DenseBlockLayer<Dtype>::setupMemoryForInternalBlobs(Blob<Dtype>* bottom, Bl
 }
 
 template <typename Dtype>
+void DenseBlockLayer<Dtype>::setupMemoryForInternalBlobsInference(Blob<Dtype>* bottom, Blob<Dtype>* top)
+{
+  //vector<int> input_shape(bottom->shape());
+  //const int init_channles = input_shape[1];
+  //const int n = input_shape[0];
+  //const int h = input_shape[2];
+  //const int w = input_shape[3];
+
+  Dtype* maps_diff_data;
+  //Dtype* maps_diff_diff;
+  //Dtype* tmp_diff_diff;
+  Dtype* conv3x3_inter_mem_data;
+  //Dtype* conv3x3_inter_mem_diff;
+  Dtype* output_mem_data;
+  //Dtype* output_mem_diff;
+  //Dtype* top0_data;
+  //Dtype* top0_diff;
+
+  if (Caffe::mode() == Caffe::GPU)
+  {
+    maps_diff_data = maps_diff_.mutable_gpu_data();
+    // /*maps_diff_diff =*/ maps_diff_.mutable_gpu_diff();
+    //tmp_diff_diff = tmp_diff_.mutable_gpu_diff();
+    conv3x3_inter_mem_data = conv3x3_inter_mem_.mutable_gpu_data();
+    //conv3x3_inter_mem_diff = conv3x3_inter_mem_.mutable_gpu_diff();
+    output_mem_data = output_mem_.mutable_gpu_data();
+    //output_mem_diff = output_mem_.mutable_gpu_diff();
+    /*top0_data =*/ top->mutable_gpu_data();
+    // /*top0_diff =*/ top->mutable_gpu_diff();
+  }
+  else
+  {
+    maps_diff_data = maps_diff_.mutable_cpu_data();
+    // /*maps_diff_diff =*/ maps_diff_.mutable_cpu_diff();
+    //tmp_diff_diff = tmp_diff_.mutable_cpu_diff();
+    conv3x3_inter_mem_data = conv3x3_inter_mem_.mutable_cpu_data();
+    //conv3x3_inter_mem_diff = conv3x3_inter_mem_.mutable_cpu_diff();
+    output_mem_data = output_mem_.mutable_cpu_data();
+    //output_mem_diff = output_mem_.mutable_cpu_diff();
+    /*top0_data =*/ top->mutable_cpu_data();
+    // /*top0_diff =*/ top->mutable_cpu_diff();
+  }
+
+  if (Caffe::mode() == Caffe::GPU)
+    for (size_t i = 0; i < bottleneck_inter_.size(); i++)
+    {
+      bottleneck_inter_[i]->gpu_data();
+      //bottleneck_inter_[i]->gpu_diff();
+    }
+  else
+    for (size_t i = 0; i < bottleneck_inter_.size(); i++)
+    {
+      bottleneck_inter_[i]->cpu_data();
+      //bottleneck_inter_[i]->cpu_diff();
+    }
+
+  typedef void(*SetFunc)(Blob<Dtype>& blob, Dtype* ptr);
+  SetFunc set_data, set_diff;
+  if (Caffe::mode() == Caffe::GPU)
+  {
+    set_data = set_data_gpu;
+    set_diff = set_diff_gpu;
+  }
+  else
+  {
+    set_data = set_data_cpu;
+    set_diff = set_diff_cpu;
+  }
+
+  for (size_t l = 0; l < output_lth_.size(); l++)
+  {
+    set_data(*(output_lth_[l].get()), output_mem_data);
+    //set_diff(*(output_lth_[l].get()), output_mem_diff);
+  }
+
+  for (size_t l = 0; l < input_lth_.size(); l++)
+  {
+    set_data(*(input_lth_[l].get()), maps_diff_data);
+    //set_diff(*(input_lth_[l].get()), tmp_diff_diff);
+  }
+
+  for (size_t l = 0; l < conv3x3_inter_.size(); l++)
+  {
+    set_data(*(conv3x3_inter_[l].get()), conv3x3_inter_mem_data);
+    //set_diff(*(conv3x3_inter_[l].get()), conv3x3_inter_mem_diff);
+  }
+}
+
+template <typename Dtype>
 void DenseBlockLayer<Dtype>::setupShapeForInternalBlobs(const Blob<Dtype>* bottom)
 {
   // Reshape is more like to adjust H and W in CNN case. 
@@ -814,15 +903,15 @@ void DenseBlockLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
 #ifdef USE_CUDNN
   if (Caffe::mode() == Caffe::GPU)
   {
-    CUDNN_CHECK(cudnnSetTensor4dDescriptor(bottleneck_inter_desc_, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, n, bottleneck_rate_ * growth_rate_, h, w));
-    CUDNN_CHECK(cudnnSetTensor4dDescriptor(output_desc_, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, n, growth_rate_, h, w));
-    CUDNN_CHECK(cudnnSetTensor4dDescriptor(bottleneck_scale_bias_desc_, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, 1, bottleneck_rate_ * growth_rate_, 1, 1));
-    CUDNN_CHECK(cudnnSetTensor4dDescriptor(final_output_desc_, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, n, k0 + num_layers_ * growth_rate_, h, w));
-    CUDNN_CHECK(cudnnSetTensor4dDescriptor(scale_bias_desc_, CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, 1, k0 + num_layers_ * growth_rate_, 1, 1));
+    CUDNN_CHECK(cudnnSetTensor4dDescriptor(bottleneck_inter_desc_, CUDNN_TENSOR_NCHW, cudnn::dataType<Dtype>::type, n, bottleneck_rate_ * growth_rate_, h, w));
+    CUDNN_CHECK(cudnnSetTensor4dDescriptor(output_desc_, CUDNN_TENSOR_NCHW, cudnn::dataType<Dtype>::type, n, growth_rate_, h, w));
+    CUDNN_CHECK(cudnnSetTensor4dDescriptor(bottleneck_scale_bias_desc_, CUDNN_TENSOR_NCHW, cudnn::dataType<Dtype>::type, 1, bottleneck_rate_ * growth_rate_, 1, 1));
+    CUDNN_CHECK(cudnnSetTensor4dDescriptor(final_output_desc_, CUDNN_TENSOR_NCHW, cudnn::dataType<Dtype>::type, n, k0 + num_layers_ * growth_rate_, h, w));
+    CUDNN_CHECK(cudnnSetTensor4dDescriptor(scale_bias_desc_, CUDNN_TENSOR_NCHW, cudnn::dataType<Dtype>::type, 1, k0 + num_layers_ * growth_rate_, 1, 1));
     for (int l = 0; l < num_layers_; l++)
     {
-      CUDNN_CHECK(cudnnSetTensor4dDescriptor(input_desc_[l], CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, n, k0 + l * growth_rate_, h, w));
-      CUDNN_CHECK(cudnnSetTensor4dDescriptor(input_scale_bias_desc_[l], CUDNN_TENSOR_NCHW, CUDNN_DATA_FLOAT, 1, k0 + l * growth_rate_, 1, 1));
+      CUDNN_CHECK(cudnnSetTensor4dDescriptor(input_desc_[l], CUDNN_TENSOR_NCHW, cudnn::dataType<Dtype>::type, n, k0 + l * growth_rate_, h, w));
+      CUDNN_CHECK(cudnnSetTensor4dDescriptor(input_scale_bias_desc_[l], CUDNN_TENSOR_NCHW, cudnn::dataType<Dtype>::type, 1, k0 + l * growth_rate_, 1, 1));
     }
     
     {
@@ -901,7 +990,10 @@ void DenseBlockLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
   post_scale_layer_->Reshape(vector<Blob<Dtype>*>(1, &maps_diff_), top);
   post_relu_layer_->Reshape(top, top);
 
-  setupMemoryForInternalBlobs(bottom[0], top[0]);
+  if (this->phase_ == TEST)
+    setupMemoryForInternalBlobsInference(bottom[0], top[0]);
+  else
+    setupMemoryForInternalBlobs(bottom[0], top[0]);
 
   if (expect_blobs_.size() > 0)
   { // if there are parameters to be copied into working parameter blobs

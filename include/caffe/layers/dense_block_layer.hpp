@@ -78,6 +78,7 @@ class DenseBlockLayer : public Layer<Dtype>
   void generateLayerParamsForBlock();
   void setupShapeForInternalBlobs(const Blob<Dtype>* bottom);
   void setupMemoryForInternalBlobs(Blob<Dtype>* bottom, Blob<Dtype>* top);
+  void setupMemoryForInternalBlobsInference(Blob<Dtype>* bottom, Blob<Dtype>* top);
 
   virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top);
@@ -88,6 +89,9 @@ class DenseBlockLayer : public Layer<Dtype>
     const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom);
   virtual void Backward_gpu(const vector<Blob<Dtype>*>& top,
     const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom);
+
+  virtual void ForwardInference_gpu(const vector<Blob<Dtype>*>& bottom,
+    const vector<Blob<Dtype>*>& top);
 
  public: // for debug
 

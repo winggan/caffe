@@ -423,7 +423,7 @@ static void updateMovingAverage(BatchNormLayer<Dtype>* layer)
   layer->blobs()[2]->mutable_cpu_data()[0] *= moving_average_fraction_;
   layer->blobs()[2]->mutable_cpu_data()[0] += 1;
 }
-#if 1 // debug utils
+#if 0 // debug utils
 static cudnnTensorDescriptor_t copyTensor4dDesc(cudnnTensorDescriptor_t tensorDesc)
 {
   cudnnTensorDescriptor_t ret;
@@ -464,12 +464,198 @@ static void fillArray(int count, Dtype *dst)
     dst[i] = (rand() % 2 ? -1 : 1) * Dtype(rand() - RAND_MAX / 2) * 20 / RAND_MAX;
 }
 #endif // debug utils
+
+#ifdef USE_CUDNN
+
 template <typename Dtype>
 inline static double cudnnGetBNEps(Dtype val)
 {
   double ret(val);
   return ret < CUDNN_BN_MIN_EPSILON ? CUDNN_BN_MIN_EPSILON : ret;
 }
+
+template <typename Dtype>
+void DenseBlockLayer<Dtype>::ForwardInference_gpu(const vector<Blob<Dtype>*>& bottom,
+  const vector<Blob<Dtype>*>& top)
+{
+  const vector<int> shape(bottom[0]->shape());
+  const int n = shape[0];
+  const int k0= shape[1];
+  const int h = shape[2];
+  const int w = shape[3];
+
+  // copy the input data into working space 
+  caffe_copy(bottom[0]->count(), bottom[0]->gpu_data(), maps_diff_.mutable_gpu_data());
+
+  Dtype one(1.f), zero(0.f);
+
+  for (int l = 0; l < num_layers_; l++)
+  {
+    vector<Blob<Dtype>*> the_input_lth(1, input_lth_[l].get());
+    vector<Blob<Dtype>*> the_conv3x3_inter_l(1, conv3x3_inter_[l].get());
+    vector<Blob<Dtype>*> the_output_lth(1, output_lth_[l].get());
+
+    if (use_bottleneck_)
+    {
+      vector<Blob<Dtype>*> the_bottleneck_inter_l(1, bottleneck_inter_[l].get());
+
+      {
+        //updateMovingAverage( (BatchNormLayer<Dtype>*)(bottle_bn_layers_[l].get()) );
+        //CUDNN_CHECK(cudnnBatchNormalizationForwardTraining(
+        //  cudnn_handle_, CUDNN_BATCHNORM_SPATIAL, &one, &zero,
+        //  input_desc_[l], the_input_lth[0]->gpu_data(),
+        //  input_desc_[l], the_conv3x3_inter_l[0]->mutable_gpu_data(),
+        //  input_scale_bias_desc_[l], bottle_scale_layers_[l]->blobs()[0]->gpu_data(), bottle_scale_layers_[l]->blobs()[1]->gpu_data(),
+        //  1 / bottle_bn_layers_[l]->blobs()[2]->cpu_data()[0],
+        //  bottle_bn_layers_[l]->blobs()[0]->mutable_gpu_data(),
+        //  bottle_bn_layers_[l]->blobs()[1]->mutable_gpu_data(),
+        //  cudnnGetBNEps(bottle_bn_layers_[l]->layer_param().batch_norm_param().eps()),
+        //  bottleneck_bn_mean_var_[l]->mutable_gpu_data(), bottleneck_bn_mean_var_[l]->mutable_gpu_diff()
+        //));
+        CUDNN_CHECK(cudnnBatchNormalizationForwardInference(
+          cudnn_handle_, CUDNN_BATCHNORM_SPATIAL, &one, &zero,
+          input_desc_[l], the_input_lth[0]->gpu_data(),
+          input_desc_[l], the_conv3x3_inter_l[0]->mutable_gpu_data(),
+          input_scale_bias_desc_[l], 
+          bottle_scale_layers_[l]->blobs()[0]->gpu_data(), 
+          bottle_scale_layers_[l]->blobs()[1]->gpu_data(),
+          bottle_bn_layers_[l]->blobs()[0]->gpu_data(),
+          bottle_bn_layers_[l]->blobs()[1]->gpu_data(),
+          cudnnGetBNEps(bottle_bn_layers_[l]->layer_param().batch_norm_param().eps())
+        ));
+      }
+      //bottle_bn_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
+      // (in gpu) async "assemble" (original part) can start here to prepare for next conv block
+      assemble_maps_gpu_origin_part(n, h, w, k0 + l * growth_rate_, growth_rate_,
+        maps_diff_.mutable_gpu_data(), (const Dtype*)NULL /*output_lth_[l]->gpu_data()*/, dataCopyStream_);
+
+      //bottle_scale_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
+      bottle_relu_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
+
+      conv1x1_layers_[l]->Forward(the_conv3x3_inter_l, the_bottleneck_inter_l);
+
+      //bn_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
+      //scale_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
+      {
+        caffe_copy(the_bottleneck_inter_l[0]->count(),
+                   the_bottleneck_inter_l[0]->gpu_data(), 
+                   bottleneck_scale_tmp_[l]->mutable_gpu_data());
+        //updateMovingAverage( (BatchNormLayer<Dtype>*)(bn_layers_[l].get()) );
+        //CUDNN_CHECK(cudnnBatchNormalizationForwardTraining(
+        //  cudnn_handle_, CUDNN_BATCHNORM_SPATIAL, &one, &zero,
+        //  bottleneck_inter_desc_, bottleneck_scale_tmp_[l]->gpu_data(),
+        //  bottleneck_inter_desc_, the_bottleneck_inter_l[0]->mutable_gpu_data(),
+        //  bottleneck_scale_bias_desc_, scale_layers_[l]->blobs()[0]->gpu_data(), scale_layers_[l]->blobs()[1]->gpu_data(),
+        //  1 / bn_layers_[l]->blobs()[2]->cpu_data()[0],
+        //  bn_layers_[l]->blobs()[0]->mutable_gpu_data(),
+        //  bn_layers_[l]->blobs()[1]->mutable_gpu_data(),
+        //  cudnnGetBNEps(bn_layers_[l]->layer_param().batch_norm_param().eps()),
+        //  bn_mean_var_[l]->mutable_gpu_data(), bn_mean_var_[l]->mutable_gpu_diff()
+        //));
+        CUDNN_CHECK(cudnnBatchNormalizationForwardInference(
+          cudnn_handle_, CUDNN_BATCHNORM_SPATIAL, &one, &zero,
+          bottleneck_inter_desc_, bottleneck_scale_tmp_[l]->gpu_data(),
+          bottleneck_inter_desc_, the_bottleneck_inter_l[0]->mutable_gpu_data(),
+          bottleneck_scale_bias_desc_,
+          scale_layers_[l]->blobs()[0]->gpu_data(),
+          scale_layers_[l]->blobs()[1]->gpu_data(),
+          bn_layers_[l]->blobs()[0]->gpu_data(),
+          bn_layers_[l]->blobs()[1]->gpu_data(),
+          cudnnGetBNEps(bn_layers_[l]->layer_param().batch_norm_param().eps())
+        ));
+      }
+      relu_layers_[l]->Forward(the_bottleneck_inter_l, the_bottleneck_inter_l);
+
+      conv3x3_layers_[l]->Forward(the_bottleneck_inter_l, the_output_lth);
+
+    }
+    else
+    {
+      {
+        //updateMovingAverage( (BatchNormLayer<Dtype>*)(bn_layers_[l].get()) );
+        //CUDNN_CHECK(cudnnBatchNormalizationForwardTraining(
+        //  cudnn_handle_, CUDNN_BATCHNORM_SPATIAL, &one, &zero,
+        //  input_desc_[l], the_input_lth[0]->gpu_data(),
+        //  input_desc_[l], the_conv3x3_inter_l[0]->mutable_gpu_data(),
+        //  input_scale_bias_desc_[l], scale_layers_[l]->blobs()[0]->gpu_data(), scale_layers_[l]->blobs()[1]->gpu_data(),
+        //  1 / bn_layers_[l]->blobs()[2]->cpu_data()[0],
+        //  bn_layers_[l]->blobs()[0]->mutable_gpu_data(),
+        //  bn_layers_[l]->blobs()[1]->mutable_gpu_data(),
+        //  cudnnGetBNEps(bn_layers_[l]->layer_param().batch_norm_param().eps()),
+        //  bn_mean_var_[l]->mutable_gpu_data(), bn_mean_var_[l]->mutable_gpu_diff()
+        //));
+        CUDNN_CHECK(cudnnBatchNormalizationForwardInference(
+          cudnn_handle_, CUDNN_BATCHNORM_SPATIAL, &one, &zero,
+          input_desc_[l], the_input_lth[0]->gpu_data(),
+          input_desc_[l], the_conv3x3_inter_l[0]->mutable_gpu_data(),
+          input_scale_bias_desc_[l],
+          scale_layers_[l]->blobs()[0]->gpu_data(),
+          scale_layers_[l]->blobs()[1]->gpu_data(),
+          bn_layers_[l]->blobs()[0]->gpu_data(),
+          bn_layers_[l]->blobs()[1]->gpu_data(),
+          cudnnGetBNEps(bn_layers_[l]->layer_param().batch_norm_param().eps())
+        ));
+      }
+      //bn_layers_[l]->Forward(the_input_lth, the_conv3x3_inter_l);
+
+      // (in gpu) async "assemble" (original part) can start here to prepare for next conv block
+      assemble_maps_gpu_origin_part(n, h, w, k0 + l * growth_rate_, growth_rate_,
+        maps_diff_.mutable_gpu_data(), (const Dtype*)NULL /*output_lth_[l]->gpu_data()*/, dataCopyStream_);
+
+      //scale_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
+      relu_layers_[l]->Forward(the_conv3x3_inter_l, the_conv3x3_inter_l);
+
+      conv3x3_layers_[l]->Forward(the_conv3x3_inter_l, the_output_lth);
+
+    }
+
+    if (use_dropout_)
+    {
+      dropout_layers_[l]->Forward(the_output_lth, the_output_lth);
+    }
+
+
+    // (in gpu) start async "assemble" (adding part) for this conv block
+    //assemble_maps(n, h, w, k0 + l * growth_rate_, growth_rate_,
+    //  maps_diff_.mutable_cpu_data(), output_lth_[l]->cpu_data());
+    assemble_maps_gpu_adding_part(n, h, w, k0 + l * growth_rate_, growth_rate_,
+      maps_diff_.mutable_gpu_data(), output_lth_[l]->gpu_data(), dataCopyStream_);
+
+    // (in gpu) synchronize "assemble" here so we can start next conv block
+    CUDA_CHECK(cudaStreamSynchronize(dataCopyStream_));
+  }
+
+  //pre_bn_layer_->Forward(vector<Blob<Dtype>*>(1, &maps_diff_), vector<Blob<Dtype>*>(1, &maps_diff_));
+  //post_scale_layer_->Forward(vector<Blob<Dtype>*>(1, &maps_diff_), top);
+  {
+    //updateMovingAverage( (BatchNormLayer<Dtype>*)(pre_bn_layer_.get()) );
+    //CUDNN_CHECK(cudnnBatchNormalizationForwardTraining(
+    //  cudnn_handle_, CUDNN_BATCHNORM_SPATIAL, &one, &zero,
+    //  final_output_desc_, maps_diff_.gpu_data(),
+    //  final_output_desc_, top[0]->mutable_gpu_data(),
+    //  scale_bias_desc_, post_scale_layer_->blobs()[0]->gpu_data(), post_scale_layer_->blobs()[1]->gpu_data(),
+    //  1 / pre_bn_layer_->blobs()[2]->cpu_data()[0],
+    //  pre_bn_layer_->blobs()[0]->mutable_gpu_data(),
+    //  pre_bn_layer_->blobs()[1]->mutable_gpu_data(),
+    //  cudnnGetBNEps(pre_bn_layer_->layer_param().batch_norm_param().eps()),
+    //  pre_bn_mean_var_.mutable_gpu_data(), pre_bn_mean_var_.mutable_gpu_diff()
+    //));
+    CUDNN_CHECK(cudnnBatchNormalizationForwardInference(
+      cudnn_handle_, CUDNN_BATCHNORM_SPATIAL, &one, &zero,
+      final_output_desc_, maps_diff_.gpu_data(),
+      final_output_desc_, top[0]->mutable_gpu_data(),
+      scale_bias_desc_, 
+      post_scale_layer_->blobs()[0]->gpu_data(), 
+      post_scale_layer_->blobs()[1]->gpu_data(),
+      pre_bn_layer_->blobs()[0]->gpu_data(),
+      pre_bn_layer_->blobs()[1]->gpu_data(),
+      cudnnGetBNEps(pre_bn_layer_->layer_param().batch_norm_param().eps())
+    ));
+  }
+  post_relu_layer_->Forward(top, top);
+}
+
+#endif // USE_CUDNN
 
 template <typename Dtype>
 void DenseBlockLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
@@ -484,6 +670,12 @@ void DenseBlockLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
   CHECK_EQ(k0 + num_layers_ * growth_rate_, top[0]->shape()[1])
     << "Invalid top shape according to k0 + num_layers_ * growth_rate_";
   
+  if (this->phase_ == TEST)
+  {
+    this->ForwardInference_gpu(bottom, top);
+    return;
+  }
+
   // copy the input data into working space 
   caffe_copy(bottom[0]->count(), bottom[0]->gpu_data(), maps_diff_.mutable_gpu_data());
 
