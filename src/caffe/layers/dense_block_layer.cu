@@ -655,10 +655,10 @@ void DenseBlockLayer<Dtype>::ForwardInference_gpu(const vector<Blob<Dtype>*>& bo
   post_relu_layer_->Forward(top, top);
 }
 
-template<>
+template
 void DenseBlockLayer<float>::ForwardInference_gpu(const vector<Blob<float>*>& bottom,
   const vector<Blob<float>*>& top);
-template<>
+template
 void DenseBlockLayer<double>::ForwardInference_gpu(const vector<Blob<double>*>& bottom,
   const vector<Blob<double>*>& top);
 #endif // USE_CUDNN
