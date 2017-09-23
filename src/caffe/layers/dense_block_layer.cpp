@@ -1012,7 +1012,7 @@ void DenseBlockLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
     append_back(this->blobs(), expect_blobs_);
     expect_blobs_.clear();
 
-#ifdef 0 // cannot handle the case that use Net<Dtype>::CopyTrainedLayersFrom
+#if 0 // cannot handle the case that use Net<Dtype>::CopyTrainedLayersFrom
     // if in GPU mode and use cudnn implementation
     if (Caffe::mode() == Caffe::GPU)
     {

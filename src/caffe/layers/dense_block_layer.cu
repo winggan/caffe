@@ -675,9 +675,9 @@ void DenseBlockLayer<Dtype>::convertBatchNormParams()
   caffe_gpu_scal(pre_bn_layer_->blobs()[1]->count(), 
                  1 / pre_bn_layer_->blobs()[2]->cpu_data()[0], 
                  pre_bn_layer_->blobs()[1]->mutable_gpu_data());
-  pre_bn_layer_->blobs()[2]->cpu_data()[0] = -pre_bn_layer_->blobs()[2]->cpu_data()[0];
+  pre_bn_layer_->blobs()[2]->mutable_cpu_data()[0] = -pre_bn_layer_->blobs()[2]->cpu_data()[0];
 
-  for (size_t i = 0; i < bn_layers_.size() i++)
+  for (size_t i = 0; i < bn_layers_.size(); i++)
   {
     CHECK(0 < bn_layers_[i]->blobs()[2]->cpu_data()[0]) << "already in cudnn defintion";
     caffe_gpu_scal(bn_layers_[i]->blobs()[0]->count(),
@@ -686,7 +686,7 @@ void DenseBlockLayer<Dtype>::convertBatchNormParams()
     caffe_gpu_scal(bn_layers_[i]->blobs()[1]->count(),
                    1 / bn_layers_[i]->blobs()[2]->cpu_data()[0],
                    bn_layers_[i]->blobs()[1]->mutable_gpu_data());
-    bn_layers_[i]->blobs()[2]->cpu_data()[0] = -bn_layers_[i]->blobs()[2]->cpu_data()[0];
+    bn_layers_[i]->blobs()[2]->mutable_cpu_data()[0] = -bn_layers_[i]->blobs()[2]->cpu_data()[0];
   }
 
   for (size_t i = 0; i < bottle_bn_layers_.size(); i++)
@@ -698,7 +698,7 @@ void DenseBlockLayer<Dtype>::convertBatchNormParams()
     caffe_gpu_scal(bottle_bn_layers_[i]->blobs()[1]->count(),
                    1 / bottle_bn_layers_[i]->blobs()[2]->cpu_data()[0],
                    bottle_bn_layers_[i]->blobs()[1]->mutable_gpu_data());
-    bottle_bn_layers_[i]->blobs()[2]->cpu_data()[0] = -bottle_bn_layers_[i]->blobs()[2]->cpu_data()[0];
+    bottle_bn_layers_[i]->blobs()[2]->mutable_cpu_data()[0] = -bottle_bn_layers_[i]->blobs()[2]->cpu_data()[0];
   }
 
 }
