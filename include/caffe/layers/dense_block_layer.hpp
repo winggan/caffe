@@ -68,9 +68,10 @@ class DenseBlockLayer : public Layer<Dtype>
 
   void convertToPlainLayers(vector<LayerParameter>& layer_params);
   
-#ifdef USE_CUDNN
+#if defined(USE_CUDNN) && !defined(CPU_ONLY)
   // rewrite for convert cudnn BN layers parameters back to caffe mode
   virtual void ToProto(LayerParameter* param, bool write_diff = false);
+  void convertBatchNormParams();
 #endif // USE_CUDNN
 
  protected:
@@ -79,6 +80,7 @@ class DenseBlockLayer : public Layer<Dtype>
   void setupShapeForInternalBlobs(const Blob<Dtype>* bottom);
   void setupMemoryForInternalBlobs(Blob<Dtype>* bottom, Blob<Dtype>* top);
   void setupMemoryForInternalBlobsInference(Blob<Dtype>* bottom, Blob<Dtype>* top);
+  
 
   virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top);

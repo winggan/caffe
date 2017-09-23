@@ -421,7 +421,7 @@ static void updateMovingAverage(BatchNormLayer<Dtype>* layer)
     layer->layer_param().batch_norm_param().moving_average_fraction();
 
   layer->blobs()[2]->mutable_cpu_data()[0] *= moving_average_fraction_;
-  layer->blobs()[2]->mutable_cpu_data()[0] += 1;
+  layer->blobs()[2]->mutable_cpu_data()[0] -= 1;
 }
 #if 0 // debug utils
 static cudnnTensorDescriptor_t copyTensor4dDesc(cudnnTensorDescriptor_t tensorDesc)
@@ -486,6 +486,9 @@ void DenseBlockLayer<Dtype>::ForwardInference_gpu(const vector<Blob<Dtype>*>& bo
 
   // copy the input data into working space 
   caffe_copy(bottom[0]->count(), bottom[0]->gpu_data(), maps_diff_.mutable_gpu_data());
+
+  if (pre_bn_layer_->blobs()[2]->cpu_data()[0] > 0)
+    convertBatchNormParams();
 
   Dtype one(1.f), zero(0.f);
 
@@ -661,6 +664,44 @@ void DenseBlockLayer<float>::ForwardInference_gpu(const vector<Blob<float>*>& bo
 template
 void DenseBlockLayer<double>::ForwardInference_gpu(const vector<Blob<double>*>& bottom,
   const vector<Blob<double>*>& top);
+
+template <typename Dtype>
+void DenseBlockLayer<Dtype>::convertBatchNormParams()
+{
+  CHECK(0 < pre_bn_layer_->blobs()[2]->cpu_data()[0]) << "already in cudnn defintion";
+  caffe_gpu_scal(pre_bn_layer_->blobs()[0]->count(), 
+                 1 / pre_bn_layer_->blobs()[2]->cpu_data()[0], 
+                 pre_bn_layer_->blobs()[0]->mutable_gpu_data());
+  caffe_gpu_scal(pre_bn_layer_->blobs()[1]->count(), 
+                 1 / pre_bn_layer_->blobs()[2]->cpu_data()[0], 
+                 pre_bn_layer_->blobs()[1]->mutable_gpu_data());
+  pre_bn_layer_->blobs()[2]->cpu_data()[0] = -pre_bn_layer_->blobs()[2]->cpu_data()[0];
+
+  for (size_t i = 0; i < bn_layers_.size() i++)
+  {
+    CHECK(0 < bn_layers_[i]->blobs()[2]->cpu_data()[0]) << "already in cudnn defintion";
+    caffe_gpu_scal(bn_layers_[i]->blobs()[0]->count(),
+                   1 / bn_layers_[i]->blobs()[2]->cpu_data()[0],
+                   bn_layers_[i]->blobs()[0]->mutable_gpu_data());
+    caffe_gpu_scal(bn_layers_[i]->blobs()[1]->count(),
+                   1 / bn_layers_[i]->blobs()[2]->cpu_data()[0],
+                   bn_layers_[i]->blobs()[1]->mutable_gpu_data());
+    bn_layers_[i]->blobs()[2]->cpu_data()[0] = -bn_layers_[i]->blobs()[2]->cpu_data()[0];
+  }
+
+  for (size_t i = 0; i < bottle_bn_layers_.size(); i++)
+  {
+    CHECK(0 < bottle_bn_layers_[i]->blobs()[2]->cpu_data()[0]) << "already in cudnn defintion";
+    caffe_gpu_scal(bottle_bn_layers_[i]->blobs()[0]->count(),
+                   1 / bottle_bn_layers_[i]->blobs()[2]->cpu_data()[0],
+                   bottle_bn_layers_[i]->blobs()[0]->mutable_gpu_data());
+    caffe_gpu_scal(bottle_bn_layers_[i]->blobs()[1]->count(),
+                   1 / bottle_bn_layers_[i]->blobs()[2]->cpu_data()[0],
+                   bottle_bn_layers_[i]->blobs()[1]->mutable_gpu_data());
+    bottle_bn_layers_[i]->blobs()[2]->cpu_data()[0] = -bottle_bn_layers_[i]->blobs()[2]->cpu_data()[0];
+  }
+
+}
 #endif // USE_CUDNN
 
 template <typename Dtype>
@@ -675,17 +716,28 @@ void DenseBlockLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
 
   CHECK_EQ(k0 + num_layers_ * growth_rate_, top[0]->shape()[1])
     << "Invalid top shape according to k0 + num_layers_ * growth_rate_";
-  
+
+#ifdef USE_CUDNN
   if (this->phase_ == TEST)
   {
     this->ForwardInference_gpu(bottom, top);
     return;
   }
+#endif // USE_CUDNN
 
   // copy the input data into working space 
   caffe_copy(bottom[0]->count(), bottom[0]->gpu_data(), maps_diff_.mutable_gpu_data());
 
 #ifdef USE_CUDNN
+
+  // we use BN's blobs[2] to mark whether the params is in caffe
+  // definition all cudnn definition 
+  // in caffe, blobs[2] > 0, mean = blobs[0] / blobs[2], var = blobs[1] / blobs[1]
+  // in cudnn, blobs[2] < 0, mean = blobs[0], var = blobs[1]
+  // cudnn=>caffe, blobs[2] = -blobs[2], blobs[0] *= blobs[2], blobs[1] *= blobs[2]
+  // caffe=>cudnn, blobs[0] /= blobs[2], blobs[1] /= blobs[2], blobs[2] = -blobs[2]
+  if (pre_bn_layer_->blobs()[2]->cpu_data()[0] > 0)
+    convertBatchNormParams(); 
 
   Dtype one(1.f), zero(0.f);
 

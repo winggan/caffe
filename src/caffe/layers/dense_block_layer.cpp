@@ -1012,7 +1012,7 @@ void DenseBlockLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
     append_back(this->blobs(), expect_blobs_);
     expect_blobs_.clear();
 
-#ifdef USE_CUDNN
+#ifdef 0 // cannot handle the case that use Net<Dtype>::CopyTrainedLayersFrom
     // if in GPU mode and use cudnn implementation
     if (Caffe::mode() == Caffe::GPU)
     {
@@ -1058,20 +1058,22 @@ template <>
 int blobProtoCount<double>(const BlobProto &p) { return p.double_data_size(); }
 
 template <typename Dtype>
-static void processBNParamBlob(const BlobProto &scale, BlobProto *mean, BlobProto *var);
+static void processBNParamBlob(BlobProto *scale, BlobProto *mean, BlobProto *var);
 template <>
-void processBNParamBlob<float>(const BlobProto &scale, BlobProto *mean, BlobProto *var)
+void processBNParamBlob<float>(BlobProto *scale, BlobProto *mean, BlobProto *var)
 {
-  float scale_val = scale.data(0);
+  float scale_val = -(scale->data(0));
+  *(scale->mutable_data()->Mutable(0)) = scale_val;
   for (int i = 0; i < mean->data_size(); i++)
     *(mean->mutable_data()->Mutable(i)) *= scale_val;
   for (int i = 0; i < var->data_size(); i++)
     *(var->mutable_data()->Mutable(i)) *= scale_val;
 }
 template <>
-void processBNParamBlob<double>(const BlobProto &scale, BlobProto *mean, BlobProto *var)
+void processBNParamBlob<double>(BlobProto *scale, BlobProto *mean, BlobProto *var)
 {
-  double scale_val = scale.double_data(0);
+  double scale_val = -(scale->double_data(0));
+  *(scale->mutable_data()->Mutable(0)) = scale_val;
   for (int i = 0; i < mean->double_data_size(); i++)
     *(mean->mutable_double_data()->Mutable(i)) *= scale_val;
   for (int i = 0; i < var->double_data_size(); i++)
@@ -1117,7 +1119,7 @@ void DenseBlockLayer<Dtype>::ToProto(LayerParameter* param, bool write_diff) {
         << "Fail to locate blobs of bottleneck_bn_layers_[" << l << "]";
       CHECK_LT(bottleneck_bn_idx[l] + 2, this->blobs_.size());
       CHECK_EQ(1, blobProtoCount<Dtype>(param->blobs(bottleneck_bn_idx[l] + 2)) );
-      processBNParamBlob<Dtype>(param->blobs(bottleneck_bn_idx[l] + 2),
+      processBNParamBlob<Dtype>(param->mutable_blobs(bottleneck_bn_idx[l] + 2),
                                 param->mutable_blobs(bottleneck_bn_idx[l]),
                                 param->mutable_blobs(bottleneck_bn_idx[l] + 1));
     }
@@ -1125,7 +1127,7 @@ void DenseBlockLayer<Dtype>::ToProto(LayerParameter* param, bool write_diff) {
       << "Fail to locate blobs of bn_layers_[" << l << "]";
     CHECK_LT(bn_idx[l] + 2, this->blobs_.size());
     CHECK_EQ(1, blobProtoCount<Dtype>(param->blobs(bn_idx[l] + 2)) );
-    processBNParamBlob<Dtype>(param->blobs(bn_idx[l] + 2),
+    processBNParamBlob<Dtype>(param->mutable_blobs(bn_idx[l] + 2),
                               param->mutable_blobs(bn_idx[l]),
                               param->mutable_blobs(bn_idx[l] + 1));
   }
@@ -1133,7 +1135,7 @@ void DenseBlockLayer<Dtype>::ToProto(LayerParameter* param, bool write_diff) {
     << "Fail to locate blobs of pre_bn_layers_";
   CHECK_LT(pre_bn_idx + 2, this->blobs_.size());
   CHECK_EQ(1, blobProtoCount<Dtype>(param->blobs(pre_bn_idx + 2)) );
-  processBNParamBlob<Dtype>(param->blobs(pre_bn_idx + 2),
+  processBNParamBlob<Dtype>(param->mutable_blobs(pre_bn_idx + 2),
                             param->mutable_blobs(pre_bn_idx),
                             param->mutable_blobs(pre_bn_idx + 1));
 }
