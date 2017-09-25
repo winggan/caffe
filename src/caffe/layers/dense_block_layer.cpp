@@ -1063,6 +1063,7 @@ template <>
 void processBNParamBlob<float>(BlobProto *scale, BlobProto *mean, BlobProto *var)
 {
   float scale_val = -(scale->data(0));
+  if (scale_val < 0) { LOG(INFO) << "Already in caffe definition"; return; }
   *(scale->mutable_data()->Mutable(0)) = scale_val;
   for (int i = 0; i < mean->data_size(); i++)
     *(mean->mutable_data()->Mutable(i)) *= scale_val;
@@ -1073,6 +1074,7 @@ template <>
 void processBNParamBlob<double>(BlobProto *scale, BlobProto *mean, BlobProto *var)
 {
   double scale_val = -(scale->double_data(0));
+  if (scale_val < 0) { LOG(INFO) << "Already in caffe definition"; return; }
   *(scale->mutable_data()->Mutable(0)) = scale_val;
   for (int i = 0; i < mean->double_data_size(); i++)
     *(mean->mutable_double_data()->Mutable(i)) *= scale_val;
@@ -1329,4 +1331,3 @@ INSTANTIATE_CLASS(DenseBlockLayer);
 REGISTER_LAYER_CLASS(DenseBlock);
 
 } // namespace 
-
