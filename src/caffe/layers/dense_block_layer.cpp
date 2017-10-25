@@ -29,6 +29,8 @@ DenseBlockLayer<Dtype>::~DenseBlockLayer()
     CUDA_CHECK(cudaStreamDestroy(dataCopyStream_));
     CUDA_CHECK(cudaStreamDestroy(diffCopyStream_));
 #ifdef USE_CUDNN
+    if (pre_bn_layer_.get())
+    { // check whether LayerSetUp has run
     CUDNN_CHECK(cudnnDestroy(cudnn_handle_));
     CUDNN_CHECK(cudnnDestroyTensorDescriptor(bottleneck_inter_desc_));
     CUDNN_CHECK(cudnnDestroyTensorDescriptor(output_desc_));
@@ -40,6 +42,7 @@ DenseBlockLayer<Dtype>::~DenseBlockLayer()
     {
       CUDNN_CHECK(cudnnDestroyTensorDescriptor(input_desc_[i]));
       CUDNN_CHECK(cudnnDestroyTensorDescriptor(input_scale_bias_desc_[i]));
+    }
     }
 #endif // USE_CUDNN
   }
