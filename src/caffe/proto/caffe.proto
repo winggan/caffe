@@ -308,7 +308,7 @@ message ParamSpec {
 // NOTE
 // Update the next available ID when you add a new LayerParameter field.
 //
-// LayerParameter next available layer-specific ID: 154 (last added: dense_block_param)
+// LayerParameter next available layer-specific ID: 155 (last added: net_forward_param)
 message LayerParameter {
   optional string name = 1; // the layer name
   optional string type = 2; // the layer type
@@ -391,6 +391,7 @@ message LayerParameter {
   optional LRNParameter lrn_param = 118;
   optional MemoryDataParameter memory_data_param = 119;
   optional MVNParameter mvn_param = 120;
+  optional NetForwardParameter net_forward_param = 154;
   optional NoiseParameter noise_param = 148;
   optional ParameterParameter parameter_param = 145;
   optional PoolingParameter pooling_param = 121;
@@ -1569,5 +1570,20 @@ message DenseBlockParameter {
   
   optional bool use_dropout = 12 [default = false];
   optional DropoutParameter dropout_param = 13;
+  
+}
+
+message NetForwardParameter {
+  // path of .prototxt and .caffemodel 
+  optional string net_proto = 1; 
+  optional string net_model = 2;
+  
+  // blobs in the net to be copied to the tops
+  repeated string top_blob_names = 3;
+  // however we directly map bottoms of this layer to input blobs 
+  // of the network. 
+  
+  // whether the network can adjust input size
+  optional bool can_reshape = 4 [default = false];
   
 }

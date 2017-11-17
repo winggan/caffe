@@ -140,6 +140,24 @@ void Net<Dtype>::Init(const NetParameter& in_param) {
     const int num_param_blobs = layers_[layer_id]->blobs().size();
     CHECK_LE(param_size, num_param_blobs)
         << "Too many params specified for layer " << layer_param.name();
+    //if (param_size == 1 
+    // && layer_param.param(0).has_lr_mult() 
+    // && layer_param.param(0).lr_mult() == -1.f)
+    //{
+    //  // Low level hack !! A simplified way to freeze all parameters of this layer
+    //  LOG(INFO) << "Freeze Parameters of layer " << layer_param.name();
+    //  LayerParameter *mutable_layer_param = param.mutable_layer(layer_id);
+    //  mutable_layer_param->mutable_param(0)->set_lr_mult(0.f);
+    //  mutable_layer_param->mutable_param(0)->set_decay_mult(0.f);
+    //  for (int param_id = 1; param_id < num_param_blobs; ++param_id)
+    //  {
+    //    ParamSpec* added = mutable_layer_param->add_param();
+    //    added->set_lr_mult(0.f);
+    //    added->set_decay_mult(0.f);
+    //  }
+    //  *(int*)&param_size = layer_param.param_size();
+    //  LOG(INFO) << "Created " << param_size << " ParamSpec { lr_mult = decay_mult = 0}";
+    //}
     ParamSpec default_param_spec;
     for (int param_id = 0; param_id < num_param_blobs; ++param_id) {
       const ParamSpec* param_spec = (param_id < param_size) ?
