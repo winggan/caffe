@@ -54,12 +54,27 @@ int main(int argc, char **argv)
           const string &layer_name = input_net.layer(layer_id).name();
           DenseBlockLayer<Dtype>* dense_block =
             (DenseBlockLayer<Dtype>*)(net.layer_by_name(layer_name).get());
+          std::string true_bottom(""), false_bottom("");
+          {
+            if (input_net.layer(layer_id).bottom(0) != dense_block->layer_param().bottom(0))
+            {
+              LOG(INFO) << "Detect split layer insertion, apply bottom name restore: " 
+                        << input_net.layer(layer_id).bottom(0) << " vs "
+                        << dense_block->layer_param().bottom(0);
+              LOG(INFO) << "Layer name = " << layer_name;
+              true_bottom = input_net.layer(layer_id).bottom(0);
+              false_bottom = dense_block->layer_param().bottom(0);
+            }
+          }
           std::vector<LayerParameter> dense_layers;
           dense_block->convertToPlainLayers(dense_layers);
           names_layer_dense[input_net.layer(layer_id).name()] = std::vector<std::string>();
           std::vector<std::string> &names = names_layer_dense[input_net.layer(layer_id).name()];
           for (size_t i = 0; i < dense_layers.size(); i++)
           {
+            for (int btm = 0; btm < dense_layers[i].bottom_size(); btm ++)
+              if (dense_layers[i].bottom(btm) == false_bottom)
+                dense_layers[i].set_bottom(btm, true_bottom);
             output_net.add_layer()->CopyFrom(dense_layers[i]);
             names.push_back(dense_layers[i].name());
           }
