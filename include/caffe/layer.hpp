@@ -184,6 +184,13 @@ class Layer {
     }
     loss_[top_index] = value;
   }
+  
+  /**
+    * @brief Set phase: TRAIN or TEST
+    */
+  inline void SetPhase(Phase p) {
+    phase_ = p;
+  }
 
   /**
    * @brief Returns the layer type.
