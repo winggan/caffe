@@ -234,6 +234,61 @@ static void processMirrorExtra(cv::Mat &data, const std::vector<cv::Vec2i> &pair
   }
 }
 
+static cv::Mat makeRotate2(const cv::Mat &ori_pts, const cv::Mat &pts_mask,
+    double angle, cv::Rect &resBoundBox)
+{
+  // for AlignDataLayer, assume ori_pts.type() = CV_32F
+  
+  cv::Rect originBoundBox;
+  {
+    double xMin, xMax, yMin, yMax;
+    cv::minMaxLoc(ori_pts.col(0), &xMin, &xMax, NULL, NULL, pts_mask);
+    cv::minMaxLoc(ori_pts.col(1), &yMin, &yMax, NULL, NULL, pts_mask);
+    originBoundBox = cv::Rect(floor(xMin), floor(yMin), ceil(xMax-xMin), ceil(yMax - yMin));
+  }
+  const double Pi = 3.1415926;
+  double rad = angle / 180 * Pi;
+  //double absRad = (rad > 0) ? rad : -rad;
+  double m1data[9] = {
+    1, 0, 0,
+    0, 1, 0,
+    0, 0, 1
+  }, m2data[9], m3data[9];
+  memcpy(m2data, m1data, 9 * sizeof(double));
+  //memcpy(m3data, m1data, 9 * sizeof(double));
+  double width = originBoundBox.width;
+  double height = originBoundBox.height;
+  m1data[2] = -width / 2 - originBoundBox.x;
+  m1data[5] = -height / 2 - originBoundBox.y;
+  
+  //cv::RotatedRect rRect = cv::RotatedRect(cv::Point2f(0, 0), cv::Size2f((float)width, (float)height), float(angle));
+  //resBoundBox = rRect.boundingRect();
+  //fprintf(stderr, "x = %d, y = %d, w = %d, h = %d\n", resBoundBox.x, resBoundBox.y, resBoundBox.width, resBoundBox.height);
+  
+  m2data[0] = m2data[4] = std::cos(rad);
+  m2data[1] = -std::sin(rad);
+  m2data[3] = std::sin(rad);
+  
+  cv::Mat trans = cv::Mat(3, 3, CV_64F, m2data) * cv::Mat(3, 3, CV_64F, m1data);
+  
+  {
+    cv::Mat trans32;
+    trans.convertTo(trans32, CV_32F);
+    cv::Mat warp_pts = ori_pts * trans32(cv::Rect(0, 0, 2, 2)).t();
+    warp_pts.col(0) += trans32.at<float>(0, 2);
+    warp_pts.col(1) += trans32.at<float>(1, 2);
+    
+    double xMin, xMax, yMin, yMax;
+    cv::minMaxLoc(warp_pts.col(0), &xMin, &xMax, NULL, NULL, pts_mask);
+    cv::minMaxLoc(warp_pts.col(1), &yMin, &yMax, NULL, NULL, pts_mask);
+    resBoundBox = cv::Rect(floor(xMin), floor(yMin), ceil(xMax-xMin), ceil(yMax - yMin));
+    
+    //fprintf(stderr, "x = %d, y = %d, w = %d, h = %d\n", resBoundBox.x, resBoundBox.y, resBoundBox.width, resBoundBox.height);
+  }
+  
+  return trans.clone();
+}
+
 template <typename Dtype>
 cv::Mat AlignAugmenter<Dtype>::Augment(const cv::Mat &cv_pts, cv::Mat &aug_cv_pts,
   const cv::Mat &cv_extra, cv::Mat &aug_cv_extra, Caffe::RNG *provided_rng)
@@ -242,13 +297,14 @@ cv::Mat AlignAugmenter<Dtype>::Augment(const cv::Mat &cv_pts, cv::Mat &aug_cv_pt
   
   double angle = ((phase_ == TRAIN) && param_.rotate()) ? 
       getUniformRand(provided_rng, param_.min_rotate(), param_.max_rotate()) : 0;
-  double xMin, xMax, yMin, yMax;
-  cv::minMaxLoc(cv_pts.col(0), &xMin, &xMax, NULL, NULL, ptsMask_);
-  cv::minMaxLoc(cv_pts.col(1), &yMin, &yMax, NULL, NULL, ptsMask_);
-  
-  cv::Rect oriBoundBox(floor(xMin), floor(yMin), ceil(xMax-xMin), ceil(yMax - yMin));
+  //double xMin, xMax, yMin, yMax;
+  //cv::minMaxLoc(cv_pts.col(0), &xMin, &xMax, NULL, NULL, ptsMask_);
+  //cv::minMaxLoc(cv_pts.col(1), &yMin, &yMax, NULL, NULL, ptsMask_);
+  //
+  //cv::Rect oriBoundBox(floor(xMin), floor(yMin), ceil(xMax-xMin), ceil(yMax - yMin));
   cv::Rect rotatedBoundBox, randBoundBox;
-  cv::Mat trans1 = makeRotate(oriBoundBox, angle, rotatedBoundBox);
+  //cv::Mat trans1 = makeRotate(oriBoundBox, angle, rotatedBoundBox);
+  cv::Mat trans1 = makeRotate2(cv_pts, ptsMask_, angle, rotatedBoundBox);
   randBoundBox = generateRandomBoundingRect(rotatedBoundBox, 
       param_.min_crop_size(), param_.max_crop_size(), provided_rng);
   cv::Mat trans2 = makeRandomCropAndResize(randBoundBox, cv::Size(width_, height_));

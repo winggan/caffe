@@ -2,6 +2,7 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <fstream>
 #include <sstream>
+#include <cmath>
 
 using namespace caffe::data_preprocess;
 
@@ -17,7 +18,8 @@ enum SrcType
 {
   PTS, // one pts file for each image sample, two path and a label in each line
   CELEBA, // celaba annotation: image path and coordinates of points without label for each line
-  OCCPTS //  tow pts file for each image sample, three path and a label in each line
+  OCCPTS, //  tow pts file for each image sample, three path and a label in each line
+  IMGLIST // like caffe's image list, generate 16 points that make a circle at the center of image with radius = image.cols / 2
 };
 
 static int(*lineProcessor)(const std::string &line, cv::Mat &img, cv::Mat &pts, cv::Mat &extra, int &label) = NULL;
@@ -82,6 +84,52 @@ static cv::Mat readPtsFile(const char* fileName)
   return ret;
 }
 
+static int imglistLineProcessor(const std::string &line, cv::Mat &img, cv::Mat &pts, cv::Mat &extra, int &label)
+{
+  std::string imgPath;
+  {
+    std::string streamSrc = line + " ";
+    std::stringstream ss(streamSrc, std::ios_base::in);
+    std::vector<std::string> parts;
+    while(!ss.eof())
+    {
+      std::string line;
+      std::getline(ss, line, ' ');
+      if (line.length() > 0)
+        parts.push_back(line); 
+    }
+    if (parts.size() != 2)
+      return 1;
+    if (1 != sscanf(parts[1].c_str(), "%d", &label) || label < 0)
+      return 2;
+    imgPath = parts[0]; 
+  }
+
+  img = cv::imread(imgPath, CV_LOAD_IMAGE_COLOR);
+  if (img.empty())
+    return 3;
+  
+  {
+    float xoff = 0.5f * img.cols;
+    float yoff = 0.5f * img.rows;
+    float r = (xoff < yoff) ? xoff : yoff;
+    
+    const float pi = 3.1415927f;
+    const int n_pt = 16;
+    const float step = 2.f * pi / n_pt;
+    float rad = 0.f;
+    pts.create(16, 2, CV_32F);
+    for (int i = 0; i < n_pt; i ++, rad += step)
+    {
+      float* row = pts.ptr<float>(i);
+      row[0] = xoff + cosf(rad) * r;
+      row[1] = yoff + sinf(rad) * r;
+    }
+    
+  }
+
+  return 0;
+}
 
 static int ptsLineProcessor(const std::string &line, cv::Mat &img, cv::Mat &pts, cv::Mat &extra, int &label)
 {
@@ -215,6 +263,8 @@ static void parse_parameters(int argc, char **argv)
       src_type = CELEBA;
     else if (typeStr == "occpts")
       src_type = OCCPTS;
+    else if (typeStr == "imglist")
+      src_type = IMGLIST;
     else
       LOG(FATAL) << "unknown src type";
 
@@ -224,6 +274,8 @@ static void parse_parameters(int argc, char **argv)
       lineProcessor = celebaLineProcessor;
     else if (src_type == OCCPTS)
       lineProcessor = occluPtsLineProcessor;
+    else if (src_type == IMGLIST)
+      lineProcessor = imglistLineProcessor;
     else
       LOG(FATAL) << "unknown src type";
   }
@@ -283,8 +335,8 @@ static void parse_parameters(int argc, char **argv)
 int main(int argc, char **argv)
 {
   if (argc < 3 || argc > 9)
-  {//                           0  1                 2        3       4                  5                    6               7               8
-    fprintf(stderr, "Usage:\n  %s pts/celeba/occpts src_path [label] [color/gray=color] [net_input_size=112] [max_rotate=10] [min_crop=0.85] [max_crop=1.6]\n", argv[0]);
+  {//                           0  1                        2        3       4                  5                    6               7               8
+    fprintf(stderr, "Usage:\n  %s pts/celeba/occpts/imglist src_path [label] [color/gray=color] [net_input_size=112] [max_rotate=10] [min_crop=0.85] [max_crop=1.6]\n", argv[0]);
     return 1;
   }
   
