@@ -71,8 +71,10 @@ class AlignDataLayer : public BaseDataLayer<Dtype>, public InternalThread
 #if ALING_DATA_USE_REMAP
   Blob<float> xyMap_; // 2 x height x width
 #endif // ALING_DATA_USE_REMAP
-  
+
+#ifndef CPU_ONLY 
   cudaStream_t picPushStream_;
+#endif // CPU_ONLY
 }; // AlignDataLayer
   
 } // namespace caffe

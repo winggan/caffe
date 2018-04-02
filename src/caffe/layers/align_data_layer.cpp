@@ -250,18 +250,21 @@ AlignDataLayer<Dtype>::AlignDataLayer(const LayerParameter& param)
   }
   
   loaderKey_ = AlignDataInternal::DBLoader::buildKey(param);
-  
+#ifndef CPU_ONLY 
   if (Caffe::mode() == Caffe::GPU) {
     CUDA_CHECK(cudaStreamCreateWithFlags(&picPushStream_, cudaStreamNonBlocking));
   }
+#endif // CPU_ONLY
 }
 
 template <typename Dtype>
 AlignDataLayer<Dtype>::~AlignDataLayer()
 {
+#ifndef CPU_ONLY
   if (Caffe::mode() == Caffe::GPU) {
     CUDA_CHECK(cudaStreamDestroy(picPushStream_));
   }
+#endif // CPU_ONLY
   StopInternalThread();
 }
 
