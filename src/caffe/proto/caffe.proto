@@ -308,7 +308,7 @@ message ParamSpec {
 // NOTE
 // Update the next available ID when you add a new LayerParameter field.
 //
-// LayerParameter next available layer-specific ID: 155 (last added: net_forward_param)
+// LayerParameter next available layer-specific ID: 156 (last added: random_erase_param)
 message LayerParameter {
   optional string name = 1; // the layer name
   optional string type = 2; // the layer type
@@ -391,6 +391,7 @@ message LayerParameter {
   optional LRNParameter lrn_param = 118;
   optional MemoryDataParameter memory_data_param = 119;
   optional MVNParameter mvn_param = 120;
+  optional RandomEraseParameter random_erase_param = 155;
   optional NetForwardParameter net_forward_param = 154;
   optional NoiseParameter noise_param = 148;
   optional ParameterParameter parameter_param = 145;
@@ -1474,6 +1475,27 @@ message AlignImageDataParameter {
   optional string root_folder = 6 [default = ""];
   optional AlignAugmentationParameter augment_param = 7;
 }
+
+// Message that stores parameters used by RandomEraseLayer
+message RandomEraseParameter {
+  // lower  bound of ratio of area to mask
+  optional float area_ratio_lower = 1 [default = 0];
+  // upper bound of ratio of area to mask
+  optional float area_ratio_upper = 2 [default = 0.1];
+  // upper bound of aspect=relative_width/relative_height ( >= 1, default to 1 / lower) 
+  // lower bound of aspect=relative_width/relative_height ( <= 1, default to 1 / upper)
+  // relative_width = W_{mask} / W_{feature_map} \in [0,1]
+  // relative_height = H_{mask} / H_{feature_map} \in [0,1]
+  optional float aspect_ratio_lower = 3;
+  optional float aspect_ratio_upper = 4;
+  // upper bound of trunc
+  optional float trunc_lower = 5 [default = -128];
+  // lower bound of trunc
+  optional float trunc_upper = 6 [default = 256];
+  // truncate
+  optional bool truncate = 7 [default = false];
+}
+
 message NoiseParameter {
   enum NoiseType {
     // gaussian (normal) noise
