@@ -37,9 +37,9 @@ __global__ void random_erase_forward(const int count, const Dtype *bottom_data, 
 {
   CUDA_KERNEL_LOOP(index, count) {
     int idx = index;
-    w = idx % W;
+    int w = idx % W;
     idx /= W;
-    h = idx % H;
+    int h = idx % H;
     idx /= (H * C);
     idx <<= 2;
     int rect_x = all_rect[idx], rect_y = all_rect[idx + 1], 
@@ -57,9 +57,9 @@ __global__ void random_erase_forward_with_trunc(const int count, const Dtype *bo
 {
   CUDA_KERNEL_LOOP(index, count) {
     int idx = index;
-    w = idx % W;
+    int w = idx % W;
     idx /= W;
-    h = idx % H;
+    int h = idx % H;
     idx /= (H * C);
     idx <<= 2;
     int rect_x = all_rect[idx], rect_y = all_rect[idx + 1], 
@@ -80,9 +80,9 @@ __global__ void random_erase_backward(const int count, const Dtype *top_diff, co
 {
   CUDA_KERNEL_LOOP(index, count) {
     int idx = index;
-    w = idx % W;
+    int w = idx % W;
     idx /= W;
-    h = idx % H;
+    int h = idx % H;
     idx /= (H * C);
     idx <<= 2;
     int rect_x = all_rect[idx], rect_y = all_rect[idx + 1], 
@@ -123,8 +123,8 @@ void RandomEraseLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     int H = bottom[0]->shape(2);
     int W = bottom[0]->shape(3);   
     
-    noise_layer_->Forward_gpu(noise_btm_, noise_top_);
-    caffe_gpu_rng_uniform<Dtype>(count, Dtype(0), Dtype(1), randoms_.mutable_gpu_data());
+    noise_layer_->Forward(noise_btm_, noise_top_);
+    caffe_gpu_rng_uniform<float>(randoms_.count(), 0.f, 1.f, randoms_.mutable_gpu_data());
     generateRect_gpu_all<<<CAFFE_GET_BLOCKS(batch_size), CAFFE_CUDA_NUM_THREADS>>>(
       batch_size, randoms_.gpu_data(), 
       area_lower_, area1_, aspect_lower_, aspect1_, W, H, 

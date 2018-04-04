@@ -30,7 +30,6 @@ void RandomEraseLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
 {
   NeuronLayer<Dtype>::LayerSetUp(bottom, top);
   const RandomEraseParameter &param =  this-> layer_param_.random_erase_param();
-  filler_param_ = param.filler();
   area_upper_   = param.area_ratio_upper();
   area_lower_   = param.area_ratio_lower();
   
@@ -78,7 +77,7 @@ void RandomEraseLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
     noise_layer_param.clear_random_erase_param();
     noise_layer_param.clear_param();
     noise_layer_param.clear_blobs();
-    noise_layer_ = LayerRegistry<Dtype>::CreateLayer(noise_layer_param)
+    noise_layer_ = LayerRegistry<Dtype>::CreateLayer(noise_layer_param);
   }
   
   noise_btm_.push_back(&all_zeros_);
@@ -98,12 +97,12 @@ void RandomEraseLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
   {
     noise_.ReshapeLike(*bottom[0]);
     all_zeros_.ReshapeLike(*bottom[0]);
-    noise_layer_->Reshape(noise_btm_, noise_top_);
+    //noise_layer_->Reshape(noise_btm_, noise_top_);
   }
   //if (rects_.shape()[0] < bottom[0]->shape()[0])
   {
     std::vector<int> shape(1, bottom[0]->shape()[0]);
-    shape.push_back(4)
+    shape.push_back(4);
     rects_.Reshape(shape);
     randoms_.Reshape(shape);
   }
@@ -125,13 +124,13 @@ void RandomEraseLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     int H = bottom[0]->shape(2);
     int W = bottom[0]->shape(3);
     int c_stride = H * W;
-    int sample_stride = c_stride * c;
+    int sample_stride = c_stride * C;
     
-    noise_layer_->Forward_cpu(noise_btm_, noise_top_);
-    caffe_rng_uniform<Dtype>(count, Dtype(0), Dtype(1), randoms_.mutable_cpu_data());
+    noise_layer_->Forward(noise_btm_, noise_top_);
+    caffe_rng_uniform<float>(randoms_.count(), 0.f, 1.f, randoms_.mutable_cpu_data());
     const float* randoms = randoms_.cpu_data();
     int *rect_data = rects_.mutable_cpu_data();
-    Dtype *noise_data = noise_.cpu_data();
+    const Dtype *noise_data = noise_.cpu_data();
     for (int i=0; i < batch_size; i++) 
     {
       int *rect_i = rect_data + (i << 2);
@@ -180,7 +179,7 @@ void RandomEraseLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
     int H = bottom[0]->shape(2);
     int W = bottom[0]->shape(3);
     int c_stride = H * W;
-    int sample_stride = c_stride * c;
+    int sample_stride = c_stride * C;
     
     const int *rect_data = rects_.mutable_cpu_data();
       
