@@ -82,7 +82,8 @@ void RandomEraseLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   
   noise_btm_.push_back(&all_zeros_);
   noise_top_.push_back(&noise_);
-  
+  noise_layer_->LayerSetUp(noise_btm_, noise_top_);
+
   {
     area1_ = area_upper_ - area_lower_;
     aspect1_ = log(aspect_upper_ / aspect_lower_);
@@ -126,6 +127,7 @@ void RandomEraseLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     int c_stride = H * W;
     int sample_stride = c_stride * C;
     
+    caffe_set(count, Dtype(0), all_zeros_.mutable_cpu_data()); 
     noise_layer_->Forward(noise_btm_, noise_top_);
     caffe_rng_uniform<float>(randoms_.count(), 0.f, 1.f, randoms_.mutable_cpu_data());
     const float* randoms = randoms_.cpu_data();
