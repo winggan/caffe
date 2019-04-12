@@ -38,7 +38,7 @@ void CReLULayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     bool is_negative = bottom_data[i] < 0;
     top_data_0[i] = is_negative ? 0 :  bottom_data[i];
     top_data_1[i] = is_negative ? -bottom_data[i] : 0;
-    sign_data = is_negative ? Dtype(-1) : Dtype(1);
+    sign_data[i] = is_negative ? Dtype(-1) : Dtype(1);
   }
 }
 
@@ -61,5 +61,8 @@ void CReLULayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
     bottom_diff[i] = is_negative ? -top_diff_1[i] : top_diff_0[i];
   }
 }
+
+INSTANTIATE_CLASS(CReLULayer);
+REGISTER_LAYER_CLASS(CReLU);
 
 }

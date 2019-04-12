@@ -552,6 +552,10 @@ void AlignDataLayer<Dtype>::Forward_cpu(
   LOG(FATAL) << "NOT Implemented yet";
 }
 
+#ifdef CPU_ONLY
+STUB_GPU_FORWARD(AlignDataLayer, Forward);
+#endif
+
 INSTANTIATE_CLASS(AlignDataLayer);
 REGISTER_LAYER_CLASS(AlignData);
 
