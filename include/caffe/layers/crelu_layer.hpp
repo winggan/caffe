@@ -33,7 +33,7 @@ class CReLULayer : public Layer<Dtype> {
   //     const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom);
   
   Blob<Dtype> sign;
-}
+};
   
 } // namespace caffe
 

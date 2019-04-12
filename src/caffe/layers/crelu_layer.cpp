@@ -3,15 +3,15 @@
 namespace caffe {
   
 template <typename Dtype>
-void CReLULayer::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
+void CReLULayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top)
 {
   const LayerParameter& param = this->layer_param_;
-  CHECK_QE(param.has_scale_param(), false) << "Should not contain any scale and shift";
+  CHECK_EQ(param.has_scale_param(), false) << "Should not contain any scale and shift";
 }
 
 template <typename Dtype>
-void CReLULayer::Reshape(const vector<Blob<Dtype>*>& bottom,
+void CReLULayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top)
 {
   const LayerParameter& param = this->layer_param_;
@@ -24,7 +24,7 @@ void CReLULayer::Reshape(const vector<Blob<Dtype>*>& bottom,
 }
 
 template <typename Dtype>
-void CReLULayer::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
+void CReLULayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top)
 {
   const int count = bottom[0]->count();
@@ -43,7 +43,7 @@ void CReLULayer::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
 }
 
 template <typename Dtype>
-void CReLULayer::Backward_cpu(const vector<Blob<Dtype>*>& top,
+void CReLULayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
       const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom)
 {
   if (!propagate_down[0])
