@@ -1330,6 +1330,11 @@ void DenseBlockLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   caffe_copy(bottom[0]->count(), maps_diff_.cpu_diff(), bottom[0]->mutable_cpu_diff()); 
 }
 
+#ifdef CPU_ONLY
+STUB_GPU(DenseBlockLayer);
+STUB_GPU_FORWARD(DenseBlockLayer, ForwardInference);
+#endif
+
 INSTANTIATE_CLASS(DenseBlockLayer);
 REGISTER_LAYER_CLASS(DenseBlock);
 

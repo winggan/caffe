@@ -622,6 +622,10 @@ void AlignImageDataLayer<Dtype>::AlignAugmentWorker<DDtype>::InternalThreadEntry
 
 #endif // CAFFE_ALIGN_AUGMENT_WORKER_
 
+#ifdef CPU_ONLY
+STUB_GPU_FORWARD(AlignImageDataLayer, Forward);
+#endif
+
 INSTANTIATE_CLASS(AlignImageDataLayer);
 REGISTER_LAYER_CLASS(AlignImageData);
  
