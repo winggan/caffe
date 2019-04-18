@@ -308,7 +308,7 @@ message ParamSpec {
 // NOTE
 // Update the next available ID when you add a new LayerParameter field.
 //
-// LayerParameter next available layer-specific ID: 156 (last added: random_erase_param)
+// LayerParameter next available layer-specific ID: 157 (last added: permute_param)
 message LayerParameter {
   optional string name = 1; // the layer name
   optional string type = 2; // the layer type
@@ -395,6 +395,7 @@ message LayerParameter {
   optional NetForwardParameter net_forward_param = 154;
   optional NoiseParameter noise_param = 148;
   optional ParameterParameter parameter_param = 145;
+  optional PermuteParameter permute_param = 156;
   optional PoolingParameter pooling_param = 121;
   optional PowerParameter power_param = 122;
   optional PReLUParameter prelu_param = 131;
@@ -1608,4 +1609,11 @@ message NetForwardParameter {
   // whether the network can adjust input size
   optional bool can_reshape = 4 [default = false];
   
+}
+
+message PermuteParameter {
+  // The new orders of the axes of data. Notice it should be with
+  // in the same range as the input data, and it starts from 0.
+  // Do not provide repeated order.
+  repeated uint32 order = 1;
 }
