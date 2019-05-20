@@ -1,8 +1,10 @@
 #include "caffe/layers/reorganize_layer.hpp"
 
+// parameter is the shape of "depth" blob
 static void gen_flatten_idx(int channels, int height, int width, int stride_h, int stride_w, 
-  int *forward_idx, int *backward_idx)
+  int *input_to_output, int *output_to_input)
 {
+  // a.k.a depth to space
   const int output_channels = channels / (stride_h * stride_w);
   const int output_height = height * stride_h;
   const int output_width  = width  * stride_w;
@@ -10,17 +12,31 @@ static void gen_flatten_idx(int channels, int height, int width, int stride_h, i
   const int c_step = height * width;
   const int output_c_step = output_height * output_width;
   
-  for (int c = 0, offset_c = 0; offset_c < channels; c++, offset_c += stride_h * stride_w)
-    for (int grid_y = 0, offset_y = 0; grid_y < height; grid_y ++, offset_y += stride_h)
-      for (int grid_x = 0, offset_x = 0; grid_x < width; grid_x ++, offset_x += stride_w)
+  for (int c = 0; c < output_channels; c++)
+    for (int grid_y = 0; grid_y < height; grid_y ++)
+      for (int grid_x = 0; grid_x < width; grid_x ++)
       {
+        // offset_x = grid_x * stride_w
+        // offset_y = grid_y * stride_h
         for (int inner_y = 0; inner_y < stride_h; inner_y ++)
           for (int inner_x = 0; inner_x < stride_w; inner_x ++)
           {
-            int input_idx  = (offset_c + inner_y * stride_w + inner_x) * c_step + grid_y * width + grid_x;
-            int output_idx = c * output_c_step + (offset_y + inner_y) * output_width + (offset_x + inner_x);
-            forward_idx[output_idx] = input_idx;
-            backward_idx[input_idx] = output_idx;
+            // "depth" (input)
+            int c_idx_d = c + (inner_y * stride_w + inner_x) * output_channels;
+            int h_idx_d = grid_y;
+            int w_idx_d = grid_x;
+            // "space" (output)
+            int c_idx_s = c;
+            int h_idx_s = grid_y * stride_h + inner_y;
+            int w_idx_s = grid_x * stride_w + inner_x;
+
+            int input_idx  = c_idx_d * c_step + h_idx_d * width + w_idx_d;
+            int output_idx = c_idx_s * output_c_step + h_idx_s * output_width + w_idx_s;
+            // for flatten (a.k.a depth to space)
+            //    fwd: top[output_idx] = bottom[input_idx]
+            //    bwd: bottom[input_idx] = top[output_idx]
+            output_to_input[output_idx] = input_idx;
+            input_to_output[input_idx] = output_idx;
           }
         
       }
@@ -54,6 +70,10 @@ template <typename Dtype>
 void ReorganizeLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
     const vector<Blob<Dtype>*>& top) 
 {
+  if (bottom[0]->shape() == this->current_shape_) return;
+
+  this->current_shape_ = bottom[0]->shape();
+
   CHECK_EQ(bottom[0]->shape().size(), 4) << this->type() << " Layer only support 4-D input (NCHW)";
   const Blob<Dtype> *const input = bottom[0];
   if (isFlatten_)
@@ -71,64 +91,33 @@ void ReorganizeLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
   const int input_h = input->shape()[2];
   const int input_w = input->shape()[3];
   
-  backward_idx_.Reshape(input->shape());
+  const int sample_count = input_c * input_h * input_w;
+  std::vector<int> idx_shape(1, sample_count);
+
+  top_to_bottom_.Reshape(idx_shape);
+  bottom_to_top_.Reshape(idx_shape);
+  int *top_to_bottom_data = top_to_bottom_.mutable_cpu_data();
+  int *bottom_to_top_data = bottom_to_top_.mutable_cpu_data();
   if (isFlatten_)
-  {
+  { // flatten, a.k.a depth to space
     std::vector<int> outputShape(input->shape());
     outputShape[1] /= stride_h_ * stride_w_;
     outputShape[2] *= stride_h_;
     outputShape[3] *= stride_w_;
     top[0]->Reshape(outputShape);
-    forward_idx_.Reshape(outputShape);
-    int *backward_idx_data = backward_idx_.mutable_cpu_data();
-    int *forward_idx_data = forward_idx_.mutable_cpu_data();
     gen_flatten_idx(input_c, input_h, input_w, 
-      stride_h_, stride_w_, forward_idx_data, backward_idx_data);
-    //const int output_c_step = outputShape[2] * outputShape[3];
-    //const int input_c_step  = input_h * input_w;
-    //const int output_w = outputShape[3];
-    //for (int offset_c = 0, output_c = 0; offset_c < input_c; offset_c += stride_h_ * stride_w_, output_c ++)
-    //  for (int grid_y = 0, offset_y = 0; grid_y < input_h; grid_y ++, offset_y += stride_h_)
-    //    for (int grid_x = 0, offset_x = 0; grid_x < input_w; grid_x ++, offset_x += stride_w_)
-    //    {
-    //      for (int inner_y = 0; inner_y < stride_h_; inner_y ++)
-    //        for (int inner_x = 0; inner_x < stride_w_; inner_x ++)
-    //        {
-    //          int output_idx = output_c * output_c_step + (offset_y + inner_y) * output_w + (offset_x + inner_x);
-    //          int input_idx  = (offset_c + inner_y * stride_w_ + inner_x) * input_c_step + grid_y * input_w + grid_x;
-    //          forward_idx_data[output_idx] = input_idx;
-    //          backward_idx_data[input_idx] = output_idx;
-    //        }
-    //    }
+      stride_h_, stride_w_, bottom_to_top_data, top_to_bottom_data);
   }
   else
-  { // stacking
+  { // stack, a.k.a space to depth
     std::vector<int> outputShape(input->shape());
     outputShape[1] *= stride_h_ * stride_w_;
     outputShape[2] /= stride_h_;
     outputShape[3] /= stride_w_;
     top[0]->Reshape(outputShape);
-    forward_idx_.Reshape(outputShape);
-    int *forward_idx_data = forward_idx_.mutable_cpu_data();
-    int *backward_idx_data = backward_idx_.mutable_cpu_data();
     gen_flatten_idx(outputShape[1], outputShape[2], outputShape[3], 
-      stride_h_, stride_w_, backward_idx_data, forward_idx_data);
-    //const int output_c_step = outputShape[2] * outputShape[3];
-    //const int input_c_step  = input_h * input_w;
-    //const int output_w = outputShape[3];
-    //for (int offset_c = 0, c = 0; c < input_c; offset_c += stride_h_ * stride_w_, c ++)
-    //  for (int grid_y = 0, offset_y = 0; offset_y < input_h; grid_y ++, offset_y += stride_h_)
-    //    for (int grid_x = 0, offset_x = 0; offset_x < input_w; grid_x ++, offset_x += stride_w_)
-    //    {
-    //      for (int inner_y = 0; inner_y < stride_h_; inner_y ++)
-    //        for (int inner_x = 0; inner_x < stride_w_; inner_x ++)
-    //        {
-    //          int input_idx = c * input_c_step + (grid_y + inner_y) * input_w + (grid_x + inner_x);
-    //          int output_idx = (offset_c + inner_y * stride_w_ + inner_x) * output_c_step + grid_y * output_w + grid_x;
-    //          forward_idx_data[output_idx] = input_idx;
-    //          backward_idx_data[input_idx] = output_idx;
-    //        }
-    //    }
+      stride_h_, stride_w_, top_to_bottom_data, bottom_to_top_data);
+
   }
 }
 
@@ -136,11 +125,20 @@ template <typename Dtype>
 void ReorganizeLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top)
 {
-  const int* forward_idx_data = forward_idx_.cpu_data();
+  const int* top_to_bottom_data = top_to_bottom_.cpu_data();
   const Dtype* bottom_data = bottom[0]->cpu_data();
   Dtype* top_data = top[0]->mutable_cpu_data();
-  for (int i = 0; i < bottom[0]->count(); i ++)
-    top_data[i] = bottom_data[forward_idx_data[i]];
+
+  const int sample_stride = this->top_to_bottom_.count();
+  const int batch_size = bottom[0]->shape()[0];
+  int b;
+  const Dtype* src;
+  Dtype* dst;
+  for (b = 0, src = bottom_data, dst = top_data;
+       b < batch_size;
+       b++, src += sample_stride, dst += sample_stride)
+    for (int i = 0; i < sample_stride; i ++)
+      dst[i] = src[top_to_bottom_data[i]];
   
 }
 
@@ -151,11 +149,20 @@ void ReorganizeLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
   if (!propagate_down[0]) {
     return;
   }
-  const int* backward_idx_data = backward_idx_.cpu_data();
+  const int* bottom_to_top_data = bottom_to_top_.cpu_data();
   const Dtype* top_diff = top[0]->cpu_diff();
   Dtype* bottom_diff = bottom[0]->mutable_cpu_diff();
-  for (int i = 0; i < top[0]->count(); i ++)
-    bottom_diff[i] = top_diff[backward_idx_data[i]];
+
+  const int sample_stride = this->top_to_bottom_.count();
+  const int batch_size = bottom[0]->shape()[0];
+  int b;
+  const Dtype* src;
+  Dtype* dst;
+  for (b = 0, src = top_diff, dst = bottom_diff;
+       b < batch_size;
+       b++, src += sample_stride, dst += sample_stride)
+    for (int i = 0; i < top[0]->count(); i ++)
+      dst[i] = src[bottom_to_top_data[i]];
 }
 
 #ifdef CPU_ONLY

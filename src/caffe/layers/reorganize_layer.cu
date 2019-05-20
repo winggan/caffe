@@ -4,11 +4,12 @@ namespace caffe
 {
   
 template <typename Dtype>
-__global__ void ReorganizeArray(const Dtype *src, Dtype *dst, const int *idx, int count)
+__global__ void ReorganizeArray(const Dtype *src, Dtype *dst, const int *idx, const int sample_stride, const int count)
 {
   CUDA_KERNEL_LOOP(i, count)
   {
-    dst[i] = src[idx[i]];
+    const int in_sample_offset = i % sample_stride;
+    dst[i] = src[i - in_sample_offset + idx[in_sample_offset]];
   }
 
 }
@@ -17,12 +18,15 @@ template <typename Dtype>
 void ReorganizeLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top)
 {
-  const int* forward_idx_data = forward_idx_.gpu_data();
+  const int* top_to_bottom_data = top_to_bottom_.gpu_data();
   const Dtype* bottom_data = bottom[0]->gpu_data();
   Dtype* top_data = top[0]->mutable_gpu_data();
+
   const int count = bottom[0]->count();
+  const int sample_stride = this->top_to_bottom_.count();
+
   ReorganizeArray<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
-    bottom_data, top_data, forward_idx_data, count);
+    bottom_data, top_data, top_to_bottom_data, sample_stride, count);
   CUDA_POST_KERNEL_CHECK;
 }
   
@@ -33,12 +37,15 @@ void ReorganizeLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
   if (!propagate_down[0]) {
     return;
   }
-  const int* backward_idx_data = backward_idx_.gpu_data();
+  const int* bottom_to_top_data = bottom_to_top_.gpu_data();
   const Dtype* top_diff = top[0]->gpu_diff();
   Dtype* bottom_diff = bottom[0]->mutable_gpu_diff();
+
   const int count = bottom[0]->count();
+  const int sample_stride = this->top_to_bottom_.count();
+
   ReorganizeArray<Dtype><<<CAFFE_GET_BLOCKS(count), CAFFE_CUDA_NUM_THREADS>>>(
-    top_diff, bottom_diff, backward_idx_data, count);
+    top_diff, bottom_diff, bottom_to_top_data, sample_stride, count);
   CUDA_POST_KERNEL_CHECK;
 }
 

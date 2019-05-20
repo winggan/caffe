@@ -242,7 +242,17 @@ set(HAVE_CUDA TRUE)
 message(STATUS "CUDA detected: " ${CUDA_VERSION})
 list(APPEND Caffe_INCLUDE_DIRS PUBLIC ${CUDA_INCLUDE_DIRS})
 list(APPEND Caffe_LINKER_LIBS PUBLIC ${CUDA_CUDART_LIBRARY}
-                                     ${CUDA_curand_LIBRARY} ${CUDA_CUBLAS_LIBRARIES} ${CUDA_nppi_LIBRARY})
+                                     ${CUDA_curand_LIBRARY} ${CUDA_CUBLAS_LIBRARIES} )
+if(${CUDA_VERSION} LESS 9.0)
+  list(APPEND Caffe_LINKER_LIBS PUBLIC ${CUDA_nppi_LIBRARY})
+else()
+  if(${CUDA_USE_STATIC_CUDA_RUNTIME})
+    set(CUDA_nppig_LIBRARY ${CUDA_TOOLKIT_ROOT_DIR}/lib64/libnppig.so)
+  else()
+    set(CUDA_nppig_LIBRARY ${CUDA_TOOLKIT_ROOT_DIR}/lib64/libnppig_static.a)
+  endif()
+  list(APPEND Caffe_LINKER_LIBS PUBLIC ${CUDA_nppig_LIBRARY})
+endif()
 
 # cudnn detection
 if(USE_CUDNN)
