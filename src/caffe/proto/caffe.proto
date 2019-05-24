@@ -308,7 +308,7 @@ message ParamSpec {
 // NOTE
 // Update the next available ID when you add a new LayerParameter field.
 //
-// LayerParameter next available layer-specific ID: 157 (last added: permute_param)
+// LayerParameter next available layer-specific ID: 158 (last added: pass_through_param)
 message LayerParameter {
   optional string name = 1; // the layer name
   optional string type = 2; // the layer type
@@ -395,6 +395,7 @@ message LayerParameter {
   optional NetForwardParameter net_forward_param = 154;
   optional NoiseParameter noise_param = 148;
   optional ParameterParameter parameter_param = 145;
+  optional PassThroughParameter pass_through_param = 157;
   optional PermuteParameter permute_param = 156;
   optional PoolingParameter pooling_param = 121;
   optional PowerParameter power_param = 122;
@@ -1554,6 +1555,13 @@ message ReorganizeParameter {
   optional uint32 stride_h = 4 [default = 1];
 }
 
+message PassThroughParameter {
+  // 'num_output' seems to be redundent
+  optional uint32 num_output = 1 [default = 0];
+  optional uint32 block_height = 2 [default = 0];
+  optional uint32 block_width = 3 [default = 0];
+}
+
 message SmoothL1LossParameter {
   // SmoothL1Loss(x) =
   //   0.5 * (sigma * x) ** 2    -- if x < 1.0 / sigma / sigma
@@ -1617,3 +1625,4 @@ message PermuteParameter {
   // Do not provide repeated order.
   repeated uint32 order = 1;
 }
+
